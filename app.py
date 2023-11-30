@@ -158,7 +158,7 @@ class MyClient(discord.Client):
         # スレッドでメッセージが送られた場合
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
-            messages = [msg async for msg in thread.history(limit=10)]
+            messages = [msg async for msg in thread.history(limit=30)]
             # オリジナルメッセージを追加
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
@@ -171,11 +171,51 @@ class MyClient(discord.Client):
         return thread, messages
     
     
-    # responseを2000文字ごとに区切って送信（Discordの文字数上限は2000文字）
+    # responseをコードブロックで区切って送信，2000文字超える場合はさらに区切って送信（Discordの文字数上限は2000文字）
     async def send_response_in_parts(self, thread, response):
-        for i in range(0, len(response), 2000):
-            print('bot:' + response[i:i+2000])
-            await thread.send(response[i:i+2000])
+        print (f'bot:{response}')
+        CODE_BLOCK_DELIMITER = "```"
+        MAX_LENGTH = 2000
+
+        # コードブロックを検出してリストに格納
+        parts = []
+        current_index = 0
+        while current_index < len(response):
+            # 次のコードブロックの開始位置を探す
+            start_index = response.find(CODE_BLOCK_DELIMITER, current_index)
+            # コードブロックが見つからない場合は、残りの文字列を追加して終了
+            if start_index == -1:
+                parts.append(response[current_index:])
+                break
+
+            # コードブロックの終了位置を探す
+            end_index = response.find(CODE_BLOCK_DELIMITER, start_index + len(CODE_BLOCK_DELIMITER))
+            # コードブロックが閉じられていない場合は、全体を一つのパートとして扱う
+            if end_index == -1:
+                parts.append(response[current_index:])
+                break
+
+            # コードブロックの終わりを含む位置
+            end_index += len(CODE_BLOCK_DELIMITER)
+
+            # コードブロック前のテキストを追加
+            if start_index > current_index:
+                parts.extend([response[current_index:start_index][i:i+MAX_LENGTH]
+                            for i in range(0, len(response[current_index:start_index]), MAX_LENGTH)])
+            # コードブロックを追加
+            parts.append(response[start_index:end_index])
+
+            # 現在のインデックスを更新
+            current_index = end_index
+
+        # パーツを送信
+        for part in parts:
+            # パートが最大長を超えている場合はさらに分割
+            if len(part) > MAX_LENGTH:
+                for i in range(0, len(part), MAX_LENGTH):
+                    await thread.send(part[i:i+MAX_LENGTH])
+            else:
+                await thread.send(part)
 
     
 intents = discord.Intents.default()
