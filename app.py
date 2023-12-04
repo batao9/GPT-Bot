@@ -209,13 +209,32 @@ class MyClient(discord.Client):
             current_index = end_index
 
         # パーツを送信
+        buff = ''
         for part in parts:
             # パートが最大長を超えている場合はさらに分割
             if len(part) > MAX_LENGTH:
+                # 一旦送信
+                await thread.send(buff)
                 for i in range(0, len(part), MAX_LENGTH):
-                    await thread.send(part[i:i+MAX_LENGTH])
+                    # 2000字ごとに送信
+                    buff = ''
+                    buff += part[i:i+MAX_LENGTH]
+                    if len(buff) >= MAX_LENGTH:
+                        await thread.send(part[i:i+MAX_LENGTH])
+                
             else:
-                await thread.send(part)
+                if len(buff) + len(part) > MAX_LENGTH:
+                    # 2000字を超える場合は一旦送信
+                    await thread.send(buff)
+                    buff = ''
+                    buff += part
+                else:
+                    # 2000字を超えない場合はバッファに貯める
+                    buff += part
+                    
+        # 残りを送信
+        if len(buff) > 0:
+            await thread.send(buff)
 
     
 intents = discord.Intents.default()
