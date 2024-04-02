@@ -40,14 +40,14 @@ def get_gpt_response(messages, model):
             })
                 
     # レスポンスを生成
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model=model,  
         temperature=0.7,
         top_p=0.9,
         messages=prompt
     )
     
-    return response['choices'][0]['message']['content']
+    return response.choices[0].message.content
 
 def get_gpt_response_vision(messages, model):
     prompt = []
@@ -100,7 +100,7 @@ def get_gpt_response_vision(messages, model):
                 })
     print(prompt)
     # レスポンスを生成
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model=model,  
         temperature=0.7,
         top_p=0.9,
@@ -108,7 +108,7 @@ def get_gpt_response_vision(messages, model):
         max_tokens=1000
     )
     
-    return response['choices'][0]['message']['content']
+    return response.choices[0].message.content
 
 class MyClient(discord.Client):
     async def on_ready(self):
