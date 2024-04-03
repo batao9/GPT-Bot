@@ -2,6 +2,8 @@ import discord
 import openai
 import dotenv
 import os
+import aiohttp
+import io
 
 CHANNEL_NAME_GPT4 = 'chat-with-gpt4'
 CHANNEL_NAME_GPT4_VISION = 'chat-with-gpt4-vision'
@@ -16,7 +18,7 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 
 
 # ChatGPTのレスポンスを取得する
-def get_gpt_response(messages, model):
+async def get_gpt_response(messages, model):
     if model == MODEL_GPT4_VISION:
         return get_gpt_response_vision(messages, model)
     
@@ -33,10 +35,30 @@ def get_gpt_response(messages, model):
                 "content": msg.content
             })
         else:
+            content = msg.content
+            # 添付ファイルがある場合はcontentに追加
+            if msg.attachments:
+                for attachment in message.attachments:
+                    # 添付ファイルのファイル名から拡張子を取得
+                    filename = attachment.filename
+                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java')):  # ここに確認したい拡張子を追加
+                        # 添付ファイルのURLを取得
+                        url = attachment.url
+                        # 添付ファイルの内容を非同期でダウンロード
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url) as resp:
+                                if resp.status == 200:
+                                    # ダウンロードした内容をメモリ上に保持
+                                    data = io.BytesIO(await resp.read())
+                                    # テキストとして読み込み（エンコーディングに注意）
+                                    text = data.read().decode('utf-8')
+                                    # ファイルの内容を表示（ここではコンソールに出力）
+                                    print(text)
+            
             # roleをuserに
             prompt.insert(0, {
                 "role": "user",
-                "content": msg.content
+                "content": content
             })
                 
     # レスポンスを生成
