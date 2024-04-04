@@ -30,32 +30,32 @@ async def get_gpt_response(messages, model):
         # メッセージの中身を取り出して，APIに投げる形に変換
         if msg.author.bot:
             # botからのメッセージはroleをassistantに
-            prompt.insert(0, {
-                "role": "assistant",
+            prompt.insert(0, {                    
+                "role": "assistant", 
                 "content": msg.content
             })
         else:
             content = msg.content
             # 添付ファイルがある場合はcontentに追加
             if msg.attachments:
-                for attachment in message.attachments:
+                for attachment in msg.attachments:
                     # 添付ファイルのファイル名から拡張子を取得
                     filename = attachment.filename
                     if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java')):  # ここに確認したい拡張子を追加
                         # 添付ファイルのURLを取得
                         url = attachment.url
-                        # 添付ファイルの内容を非同期でダウンロード
+                        # 添付ファイルの内容を非同期でダウsンロード
                         async with aiohttp.ClientSession() as session:
                             async with session.get(url) as resp:
                                 if resp.status == 200:
                                     # ダウンロードした内容をメモリ上に保持
                                     data = io.BytesIO(await resp.read())
                                     # テキストとして読み込み（エンコーディングに注意）
-                                    text = data.read().decode('utf-8')
-                                    # ファイルの内容を表示（ここではコンソールに出力）
-                                    print(text)
+                                    file_text = data.read().decode('utf-8')
+                                    # ファイルの内容を結合
+                                    content = f'{content}\n{filename}\n{file_text}'
             
-            # roleをuserに
+            # roleをuserに                         
             prompt.insert(0, {
                 "role": "user",
                 "content": content
@@ -151,7 +151,7 @@ class MyClient(discord.Client):
         thread, messages = await self.get_thread_and_messages(message)
         
         # GPTのレスポンスを取得し、送信
-        gpt_response = get_gpt_response(messages, model)
+        gpt_response = await get_gpt_response(messages, model)
         await self.send_response_in_parts(thread, gpt_response)
 
 
