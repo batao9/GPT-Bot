@@ -21,7 +21,7 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 async def get_gpt_response(messages, model):
     if model == MODEL_GPT4_VISION:
         return get_gpt_response_vision(messages, model)
-    
+
     prompt = []
     for msg in messages:
         # systemメッセージは無視
@@ -30,8 +30,8 @@ async def get_gpt_response(messages, model):
         # メッセージの中身を取り出して，APIに投げる形に変換
         if msg.author.bot:
             # botからのメッセージはroleをassistantに
-            prompt.insert(0, {                    
-                "role": "assistant", 
+            prompt.insert(0, {
+                "role": "assistant",
                 "content": msg.content
             })
         else:
@@ -54,13 +54,13 @@ async def get_gpt_response(messages, model):
                                     file_text = data.read().decode('utf-8')
                                     # ファイルの内容を結合
                                     content = f'{content}\n{filename}\n{file_text}'
-            
-            # roleをuserに                         
+
+            # roleをuserに
             prompt.insert(0, {
                 "role": "user",
                 "content": content
             })
-                
+
     # レスポンスを生成
     response = openai.chat.completions.create(
         model=model,  
@@ -68,7 +68,7 @@ async def get_gpt_response(messages, model):
         top_p=0.9,
         messages=prompt
     )
-    
+
     return response.choices[0].message.content
 
 def get_gpt_response_vision(messages, model):
@@ -236,7 +236,9 @@ class MyClient(discord.Client):
             # パートが最大長を超えている場合はさらに分割
             if len(part) > MAX_LENGTH:
                 # 一旦送信
-                await thread.send(buff)
+                if len(buff) > 0:
+                    await thread.send(buff)
+                    buff = ''
                 for i in range(0, len(part), MAX_LENGTH):
                     # 2000字ごとに送信
                     buff = ''
