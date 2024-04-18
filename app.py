@@ -4,6 +4,7 @@ import dotenv
 import os
 import aiohttp
 import io
+from pdfminer.high_level import extract_text
 
 CHANNEL_NAME_GPT4 = 'chat-with-gpt4'
 CHANNEL_NAME_GPT4_VISION = 'chat-with-gpt4-vision'
@@ -41,7 +42,7 @@ async def get_gpt_response(messages, model):
                 for attachment in msg.attachments:
                     # 添付ファイルのファイル名から拡張子を取得
                     filename = attachment.filename
-                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java')):  # ここに確認したい拡張子を追加
+                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):  # ここに確認したい拡張子を追加
                         # 添付ファイルのURLを取得
                         url = attachment.url
                         # 添付ファイルの内容を非同期でダウsンロード
@@ -51,7 +52,11 @@ async def get_gpt_response(messages, model):
                                     # ダウンロードした内容をメモリ上に保持
                                     data = io.BytesIO(await resp.read())
                                     # テキストとして読み込み（エンコーディングに注意）
-                                    file_text = data.read().decode('utf-8')
+                                    file_text = ''
+                                    if filename.endswith(('pdf')):
+                                        file_text = extract_text(data)
+                                    else:
+                                        file_text = data.read().decode('utf-8')
                                     # ファイルの内容を結合
                                     content = f'{content}\n{filename}\n{file_text}'
 
