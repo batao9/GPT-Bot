@@ -6,12 +6,12 @@ import aiohttp
 import io
 from pdfminer.high_level import extract_text
 
+CHANNEL_NAME_GPT4o = 'chat-with-gpt4o'
 CHANNEL_NAME_GPT4 = 'chat-with-gpt4'
-CHANNEL_NAME_GPT4_VISION = 'chat-with-gpt4-vision'
 CHANNEL_NAME_GPT35 = 'chat-with-gpt3'
-MODEL_GPT4 = 'gpt-4o-2024-05-13'
-MODEL_GPT4_VISION = 'gpt-4o-2024-05-13'
-MODEL_GPT35 = 'gpt-3.5-turbo-1106'
+MODEL_GPT4o = 'gpt-4o-2024-05-13'
+MODEL_GPT4 = 'gpt-4-turbo'
+MODEL_GPT35 = 'gpt-3.5-turbo'
 
 dotenv.load_dotenv()
 TOKEN = os.getenv('TOKEN')
@@ -20,9 +20,6 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # ChatGPTのレスポンスを取得する
 async def get_gpt_response(messages, model):
-    if model == MODEL_GPT4_VISION:
-        return get_gpt_response_vision(messages, model)
-
     prompt = []
     for msg in messages:
         # systemメッセージは無視
@@ -33,16 +30,22 @@ async def get_gpt_response(messages, model):
             # botからのメッセージはroleをassistantに
             prompt.insert(0, {
                 "role": "assistant",
-                "content": msg.content
+                "content": [
+                    {
+                        'type': 'text',
+                        'text': msg.content
+                    }
+                ]
             })
         else:
             content = msg.content
+            img_urls = []
             # 添付ファイルがある場合はcontentに追加
             if msg.attachments:
                 for attachment in msg.attachments:
                     # 添付ファイルのファイル名から拡張子を取得
                     filename = attachment.filename
-                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):  # ここに確認したい拡張子を追加
+                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):  # txt形式のファイル
                         # 添付ファイルのURLを取得
                         url = attachment.url
                         # 添付ファイルの内容を非同期でダウsンロード
@@ -59,12 +62,27 @@ async def get_gpt_response(messages, model):
                                         file_text = data.read().decode('utf-8')
                                     # ファイルの内容を結合
                                     content = f'{content}\n{filename}\n{file_text}'
-
+                    
+                    elif filename.endswith(('.png', '.jpg', '.jpeg')):  # 画像の場合
+                        img_urls.append(attachment.url)
+            
             # roleをuserに
             prompt.insert(0, {
                 "role": "user",
-                "content": content
+                "content": [
+                    {
+                        "type": "text",
+                        "text": content
+                    }
+                ]
             })
+
+            # 画像のURLを追加
+            for url in img_urls:
+                prompt[0]["content"].append({
+                    "type": "image_url",
+                    "image_url": {"url": url},
+                })
 
     # レスポンスを生成
     response = openai.chat.completions.create(
@@ -73,69 +91,8 @@ async def get_gpt_response(messages, model):
         top_p=0.9,
         messages=prompt
     )
-
     return response.choices[0].message.content
 
-def get_gpt_response_vision(messages, model):
-    prompt = []
-    for msg in messages:
-        # systemメッセージは無視
-        if msg.is_system():
-            continue
-        # メッセージの中身を取り出して，APIに投げる形に変換
-        if msg.author.bot:
-            # botからのメッセージはroleをassistantに
-            # 画像が添付されているならpromptに画像urlを含める
-            if msg.attachments and any(msg.attachments[0].filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg']):
-                prompt.insert(0, {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "text", "text": msg.content},
-                        {
-                            "type": "image_url",
-                            "image_url": msg.attachments[0].url
-                        },
-                    ]
-                })
-            else:
-                prompt.insert(0, {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "text", "text": msg.content},
-                    ]
-                })
-        else:
-            # roleをuserに
-            # 画像が添付されているならpromptに画像urlを含める
-            if msg.attachments and any(msg.attachments[0].filename.lower().endswith(ext) for ext in ['png', 'jpg', 'jpeg']):
-                prompt.insert(0, {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": msg.content},
-                        {
-                            "type": "image_url",
-                            "image_url": msg.attachments[0].url
-                        },
-                    ]
-                })
-            else:
-                prompt.insert(0, {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": msg.content},
-                    ]
-                })
-    print(prompt)
-    # レスポンスを生成
-    response = openai.chat.completions.create(
-        model=model,  
-        temperature=0.7,
-        top_p=0.9,
-        messages=prompt,
-        max_tokens=1000
-    )
-    
-    return response.choices[0].message.content
 
 class MyClient(discord.Client):
     async def on_ready(self):
@@ -165,16 +122,16 @@ class MyClient(discord.Client):
         if hasattr(channel, 'name'):
             if channel.name == CHANNEL_NAME_GPT4:
                 return MODEL_GPT4
-            elif channel.name == CHANNEL_NAME_GPT4_VISION:
-                return MODEL_GPT4_VISION
+            elif channel.name == CHANNEL_NAME_GPT4o:
+                return MODEL_GPT4o
             elif channel.name == CHANNEL_NAME_GPT35:
                 return MODEL_GPT35
             
         if hasattr(channel, 'parent'):
             if channel.parent.name == CHANNEL_NAME_GPT4:
                 return MODEL_GPT4
-            elif channel.parent.name == CHANNEL_NAME_GPT4_VISION:
-                return MODEL_GPT4_VISION
+            elif channel.parent.name == CHANNEL_NAME_GPT4o:
+                return MODEL_GPT4o
             elif channel.parent.name == CHANNEL_NAME_GPT35:
                 return MODEL_GPT35
         return None
