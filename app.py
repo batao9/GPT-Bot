@@ -9,8 +9,8 @@ from pdfminer.high_level import extract_text
 CHANNEL_NAME_GPT4 = 'chat-with-gpt4'
 CHANNEL_NAME_GPT4_VISION = 'chat-with-gpt4-vision'
 CHANNEL_NAME_GPT35 = 'chat-with-gpt3'
-MODEL_GPT4 = 'gpt-4-1106-preview'
-MODEL_GPT4_VISION = 'gpt-4-vision-preview'
+MODEL_GPT4 = 'gpt-4o-2024-05-13'
+MODEL_GPT4_VISION = 'gpt-4o-2024-05-13'
 MODEL_GPT35 = 'gpt-3.5-turbo-1106'
 
 dotenv.load_dotenv()
