@@ -147,7 +147,7 @@ class MyClient(discord.Client):
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
         elif isinstance(message.channel, discord.TextChannel):
-            thread = await message.create_thread(name=message.content[:10])
+            thread = await message.create_thread(name=message.content[:10] if len(message.content) > 0 else 'new thread')
             messages = [message]
         else:
             thread = None
