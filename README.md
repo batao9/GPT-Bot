@@ -10,10 +10,7 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     ```
 2. 必要なライブラリをインストール  
     ```
-    pip install discord.py
-    pip install openai
-    pip install python-dotenv
-    pip install pdfminer.six
+    pip install -r requirements.txt
     ```
 ## 使用方法
 `chat-with-gpt4o` または `chat-with-gpt3` , `chat-with-gpt4` チャンネルを作成し書き込む．
