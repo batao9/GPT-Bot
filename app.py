@@ -84,6 +84,25 @@ async def get_gpt_response(messages, model):
                     "image_url": {"url": url},
                 })
 
+    # system messageを追加
+    system_message = {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": """
+                    あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
+                    応答の際は以下のルールに従ってください。
+                    - userから特に指示がない場合は日本語で返答を行う
+                    - Markdown形式での応答を行う
+                    - 数式を含む場合は$$で数式を囲む数式記法を使用する
+                    - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
+                    """
+            }
+        ]
+    }
+    prompt.insert(0, system_message)
+
     # レスポンスを生成
     response = openai.chat.completions.create(
         model=model,  
