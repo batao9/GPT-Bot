@@ -19,7 +19,7 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 
 
 # ChatGPTのレスポンスを取得する
-async def get_gpt_response(messages, model):
+async def get_gpt_response(messages, model, system_message=None):
     prompt = []
     for msg in messages:
         # systemメッセージは無視
@@ -85,23 +85,8 @@ async def get_gpt_response(messages, model):
                 })
 
     # system messageを追加
-    system_message = {
-        "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": """
-                    あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
-                    応答の際は以下のルールに従ってください。
-                    - userから特に指示がない場合は日本語で返答を行う
-                    - Markdown形式での応答を行う
-                    - 数式を含む場合は$$で数式を囲む数式記法を使用する
-                    - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
-                    """
-            }
-        ]
-    }
-    prompt.insert(0, system_message)
+    if system_message is not None:
+        prompt.insert(0, system_message)
 
     # レスポンスを生成
     response = openai.chat.completions.create(
@@ -132,7 +117,28 @@ class MyClient(discord.Client):
         thread, messages = await self.get_thread_and_messages(message)
         
         # GPTのレスポンスを取得し、送信
-        gpt_response = await get_gpt_response(messages, model)
+        system_message = {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": """
+                        あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
+                        応答の際は以下のルールに従ってください。
+                        - userから特に指示がない場合は日本語で返答を行う
+                        - Markdown形式での応答を行う
+                        - 数式を含む場合は$$で数式を囲む数式記法を使用する
+                        - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
+                        - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
+                        """
+                }
+            ]
+        }
+        
+        gpt_response_future = get_gpt_response(messages, model, system_message)  # GPTのレスポンスを非同期で取得
+
+        # GPTのレスポンスを取得し、送信
+        gpt_response = await gpt_response_future
         await self.send_response_in_parts(thread, gpt_response)
 
 
@@ -166,12 +172,42 @@ class MyClient(discord.Client):
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
         elif isinstance(message.channel, discord.TextChannel):
-            thread = await message.create_thread(name=message.content[:10] if len(message.content) > 0 else 'new thread')
+            thread_name_future = self.generate_thread_name([message])  # スレッド名の生成を非同期で開始
+            thread = await message.create_thread(name="スレッド名生成中...")  # 一時的なスレッド名で作成
             messages = [message]
+            thread_name = await thread_name_future  # スレッド名の生成を待機
+            await thread.edit(name=thread_name)  # スレッド名を更新
         else:
             thread = None
             messages = []
         return thread, messages
+    
+    # スレッドの名前を付ける
+    async def generate_thread_name(self, messages):
+        # GPT-4oでスレッド名を生成
+        system_message = {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": """
+                        以下のルールを守ってスレッドのタイトルを生成してください。
+                        - userのメッセージを元にスレッドのタイトルを生成する
+                        - メッセージに対して直接返答を行わない
+                        - タイトルは10文字程度
+                        - タイトルは日本語で記載
+                        - タイトルのみを返答する
+                        """
+                }
+            ]
+        }
+        thred_name = await get_gpt_response(messages, MODEL_GPT4o, system_message)
+        
+        if len(thred_name) > 15: # タイトルが15文字を超える場合は15文字に切り捨て
+            thred_name = thred_name[:15]
+        
+        return thred_name
+            
     
     
     # responseをコードブロックで区切って送信，2000文字超える場合はさらに区切って送信（Discordの文字数上限は2000文字）
