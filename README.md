@@ -13,6 +13,6 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     pip install -r requirements.txt
     ```
 ## 使用方法
-`chat-with-gpt4o` または `chat-with-gpt3` , `chat-with-gpt4` チャンネルを作成し書き込む．
-画像は`.png`, `.jpg`, `.jpeg`に対応
+`gpt-4o`, `gpt-4o-mini`, `gpt-4` または `gpt-3` チャンネルを作成し書き込む．
+画像は`.png`, `.jpg`, `.gif`, `.webp` に対応
 文章は`.txt`, `.py`, `.md`, `.csv`, `.c`, `.cpp`, `.java`, `pdf`に対応
