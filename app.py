@@ -65,7 +65,7 @@ async def get_gpt_response(messages, model, system_message=None):
                                     # ファイルの内容を結合
                                     content = f'{content}\n{filename}\n{file_text}'
                     
-                    elif filename.endswith(('.png', '.jpg', '.jpeg')):  # 画像の場合
+                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):  # 画像の場合
                         img_urls.append(attachment.url)
             
             # roleをuserに
