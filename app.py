@@ -6,10 +6,12 @@ import aiohttp
 import io
 from pdfminer.high_level import extract_text
 
-CHANNEL_NAME_GPT4o = 'chat-with-gpt4o'
-CHANNEL_NAME_GPT4 = 'chat-with-gpt4'
-CHANNEL_NAME_GPT35 = 'chat-with-gpt3'
-MODEL_GPT4o = 'gpt-4o-2024-05-13'
+CHANNEL_NAME_GPT4o = 'gpt-4o'
+CHANNEL_NAME_GPT4o_MINI = 'gpt-4o-mini'
+CHANNEL_NAME_GPT4 = 'gpt-4'
+CHANNEL_NAME_GPT35 = 'gpt3'
+MODEL_GPT4o = 'gpt-4o'
+MODEL_GPT4o_MINI = 'gpt-4o-mini'
 MODEL_GPT4 = 'gpt-4-turbo'
 MODEL_GPT35 = 'gpt-3.5-turbo'
 
@@ -149,6 +151,8 @@ class MyClient(discord.Client):
                 return MODEL_GPT4
             elif channel.name == CHANNEL_NAME_GPT4o:
                 return MODEL_GPT4o
+            elif channel.name == CHANNEL_NAME_GPT4o_MINI:
+                return MODEL_GPT4o_MINI
             elif channel.name == CHANNEL_NAME_GPT35:
                 return MODEL_GPT35
             
@@ -157,6 +161,8 @@ class MyClient(discord.Client):
                 return MODEL_GPT4
             elif channel.parent.name == CHANNEL_NAME_GPT4o:
                 return MODEL_GPT4o
+            elif channel.parent.name == CHANNEL_NAME_GPT4o_MINI:
+                return MODEL_GPT4o_MINI
             elif channel.parent.name == CHANNEL_NAME_GPT35:
                 return MODEL_GPT35
         return None
@@ -201,7 +207,7 @@ class MyClient(discord.Client):
                 }
             ]
         }
-        thred_name = await get_gpt_response(messages, MODEL_GPT4o, system_message)
+        thred_name = await get_gpt_response(messages, MODEL_GPT4o_MINI, system_message)
         
         if len(thred_name) > 15: # タイトルが15文字を超える場合は15文字に切り捨て
             thred_name = thred_name[:15]
