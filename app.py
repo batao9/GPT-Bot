@@ -9,7 +9,7 @@ from pdfminer.high_level import extract_text
 CHANNEL_NAME_GPT4o = 'gpt-4o'
 CHANNEL_NAME_GPT4o_MINI = 'gpt-4o-mini'
 CHANNEL_NAME_GPT4 = 'gpt-4'
-CHANNEL_NAME_GPT35 = 'gpt3'
+CHANNEL_NAME_GPT35 = 'gpt-3'
 MODEL_GPT4o = 'gpt-4o'
 MODEL_GPT4o_MINI = 'gpt-4o-mini'
 MODEL_GPT4 = 'gpt-4-turbo'
