@@ -143,30 +143,19 @@ class MyClient(discord.Client):
         gpt_response = await gpt_response_future
         await self.send_response_in_parts(thread, gpt_response)
 
-
     # チャンネル名に基づいてモデルを返す
     def get_model_based_on_channel(self, channel):
-        if hasattr(channel, 'name'):
-            if channel.name == CHANNEL_NAME_GPT4:
-                return MODEL_GPT4
-            elif channel.name == CHANNEL_NAME_GPT4o:
-                return MODEL_GPT4o
-            elif channel.name == CHANNEL_NAME_GPT4o_MINI:
-                return MODEL_GPT4o_MINI
-            elif channel.name == CHANNEL_NAME_GPT35:
-                return MODEL_GPT35
-            
-        if hasattr(channel, 'parent'):
-            if channel.parent.name == CHANNEL_NAME_GPT4:
-                return MODEL_GPT4
-            elif channel.parent.name == CHANNEL_NAME_GPT4o:
-                return MODEL_GPT4o
-            elif channel.parent.name == CHANNEL_NAME_GPT4o_MINI:
-                return MODEL_GPT4o_MINI
-            elif channel.parent.name == CHANNEL_NAME_GPT35:
-                return MODEL_GPT35
-        return None
-    
+        channel_name = getattr(channel, 'name', None)
+        parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
+
+        model_mapping = {
+            CHANNEL_NAME_GPT4: MODEL_GPT4,
+            CHANNEL_NAME_GPT4o: MODEL_GPT4o,
+            CHANNEL_NAME_GPT4o_MINI: MODEL_GPT4o_MINI,
+            CHANNEL_NAME_GPT35: MODEL_GPT35
+        }
+
+        return model_mapping.get(channel_name) or model_mapping.get(parent_name)
     
     # メッセージを送るスレッドと，スレッドのメッセージ履歴を返す
     async def get_thread_and_messages(self, message):
