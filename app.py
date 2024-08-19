@@ -5,6 +5,8 @@ import os
 import aiohttp
 import io
 from pdfminer.high_level import extract_text
+import sympy
+import tempfile
 
 CHANNEL_NAME_GPT4o = 'gpt-4o'
 CHANNEL_NAME_GPT4o_MINI = 'gpt-4o-mini'
@@ -19,6 +21,19 @@ dotenv.load_dotenv()
 TOKEN = os.getenv('TOKEN')
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
+sympy.init_printing()
+
+# latex_to_image関数の定義
+def latex_to_image(latex_code, save_path=None):
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+        sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
+                      dvioptions=["-T", "tight", "-z", "0", "--truecolor", "-D 600"], 
+                      dpi=60)
+        if save_path:
+            os.rename(tmpfile.name, save_path)
+            return save_path
+        else:
+            return tmpfile.name
 
 # ChatGPTのレスポンスを取得する
 async def get_gpt_response(messages, model, system_message=None):
@@ -245,35 +260,43 @@ class MyClient(discord.Client):
         # パーツを送信
         buff = ''
         for part in parts:
-            # パートが最大長を超えている場合はさらに分割
-            if len(part) > MAX_LENGTH:
-                # 一旦送信
-                if len(buff) > 0:
-                    await thread.send(buff)
-                    buff = ''
-                for i in range(0, len(part), MAX_LENGTH):
-                    # 2000字ごとに送信
-                    buff = ''
-                    buff += part[i:i+MAX_LENGTH]
-                    if len(buff) >= MAX_LENGTH:
-                        await thread.send(part[i:i+MAX_LENGTH])
-                
+            # LaTeX数式を検出して画像に変換
+            if part.startswith("$$") and part.endswith("$$"):
+                latex_code = part
+                image_path = latex_to_image(latex_code)
+                await thread.send(file=discord.File(image_path))
+                os.remove(image_path)
             else:
-                if len(buff) + len(part) > MAX_LENGTH:
-                    # 2000字を超える場合は一旦送信
-                    await thread.send(buff)
-                    buff = ''
-                    buff += part
-                else:
-                    # 2000字を超えない場合はバッファに貯める
-                    buff += part
+                # パートが最大長を超えている場合はさらに分割
+                if len(part) > MAX_LENGTH:
+                    # 一旦送信
+                    if len(buff) > 0:
+                        await thread.send(buff)
+                        buff = ''
+                    for i in range(0, len(part), MAX_LENGTH):
+                        # 2000字ごとに送信
+                        buff = ''
+                        buff += part[i:i+MAX_LENGTH]
+                        if len(buff) >= MAX_LENGTH:
+                            await thread.send(part[i:i+MAX_LENGTH])
                     
+                else:
+                    if len(buff) + len(part) > MAX_LENGTH:
+                        # 2000字を超える場合は一旦送信
+                        await thread.send(buff)
+                        buff = ''
+                        buff += part
+                    else:
+                        # 2000字を超えない場合はバッファに貯める
+                        buff += part
+                        
         # 残りを送信
         if len(buff) > 0:
             await thread.send(buff)
 
-    
-intents = discord.Intents.default()
-intents.message_content = True
-client = MyClient(intents=intents)
-client.run(TOKEN)
+
+if __name__ == '__main__':
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = MyClient(intents=intents)
+    client.run(TOKEN)
