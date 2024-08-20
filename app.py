@@ -5,6 +5,8 @@ import os
 import aiohttp
 import io
 from pdfminer.high_level import extract_text
+import sympy
+import tempfile
 
 CHANNEL_NAME_GPT4o = 'gpt-4o'
 CHANNEL_NAME_GPT4o_MINI = 'gpt-4o-mini'
@@ -19,6 +21,19 @@ dotenv.load_dotenv()
 TOKEN = os.getenv('TOKEN')
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
+sympy.init_printing()
+
+# latex_to_image関数の定義
+def latex_to_image(latex_code, save_path=None):
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+        sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
+                      dvioptions=["-T", "tight", "-z", "0", "--truecolor", "-D 600"], 
+                      dpi=60)
+        if save_path:
+            os.rename(tmpfile.name, save_path)
+            return save_path
+        else:
+            return tmpfile.name
 
 # ChatGPTのレスポンスを取得する
 async def get_gpt_response(messages, model, system_message=None):
@@ -209,34 +224,51 @@ class MyClient(discord.Client):
     async def send_response_in_parts(self, thread, response):
         print (f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
+        LATEX_DELIMITER = "$$"
         MAX_LENGTH = 2000
 
         # コードブロックを検出してリストに格納
         parts = []
         current_index = 0
         while current_index < len(response):
-            # 次のコードブロックの開始位置を探す
-            start_index = response.find(CODE_BLOCK_DELIMITER, current_index)
-            # コードブロックが見つからない場合は、残りの文字列を追加して終了
+            # 次のコードブロックまたは数式の開始位置を探す
+            start_index_code = response.find(CODE_BLOCK_DELIMITER, current_index)
+            start_index_latex = response.find(LATEX_DELIMITER, current_index)
+            
+            # 次の開始位置を決定
+            if start_index_code == -1:
+                start_index = start_index_latex
+            elif start_index_latex == -1:
+                start_index = start_index_code
+            else:
+                start_index = min(start_index_code, start_index_latex)
+            
+            # コードブロックも数式も見つからない場合は、残りの文字列を追加して終了
             if start_index == -1:
                 parts.append(response[current_index:])
                 break
 
-            # コードブロックの終了位置を探す
-            end_index = response.find(CODE_BLOCK_DELIMITER, start_index + len(CODE_BLOCK_DELIMITER))
-            # コードブロックが閉じられていない場合は、全体を一つのパートとして扱う
+            # 終了位置を探す
+            if start_index == start_index_code:
+                end_index = response.find(CODE_BLOCK_DELIMITER, start_index + len(CODE_BLOCK_DELIMITER))
+                delimiter_length = len(CODE_BLOCK_DELIMITER)
+            else:
+                end_index = response.find(LATEX_DELIMITER, start_index + len(LATEX_DELIMITER))
+                delimiter_length = len(LATEX_DELIMITER)
+            
+            # 終了位置が見つからない場合は、全体を一つのパートとして扱う
             if end_index == -1:
                 parts.append(response[current_index:])
                 break
 
-            # コードブロックの終わりを含む位置
-            end_index += len(CODE_BLOCK_DELIMITER)
+            # 終了位置を含む位置
+            end_index += delimiter_length
 
-            # コードブロック前のテキストを追加
+            # 開始位置前のテキストを追加
             if start_index > current_index:
                 parts.extend([response[current_index:start_index][i:i+MAX_LENGTH]
                             for i in range(0, len(response[current_index:start_index]), MAX_LENGTH)])
-            # コードブロックを追加
+            # コードブロックまたは数式を追加
             parts.append(response[start_index:end_index])
 
             # 現在のインデックスを更新
@@ -245,35 +277,46 @@ class MyClient(discord.Client):
         # パーツを送信
         buff = ''
         for part in parts:
-            # パートが最大長を超えている場合はさらに分割
-            if len(part) > MAX_LENGTH:
-                # 一旦送信
-                if len(buff) > 0:
+            # LaTeX数式を検出して画像に変換
+            if part.startswith("$$") and part.endswith("$$"):
+                if len(buff) > 0: 
                     await thread.send(buff)
                     buff = ''
-                for i in range(0, len(part), MAX_LENGTH):
-                    # 2000字ごとに送信
-                    buff = ''
-                    buff += part[i:i+MAX_LENGTH]
-                    if len(buff) >= MAX_LENGTH:
-                        await thread.send(part[i:i+MAX_LENGTH])
-                
+                latex_code = part
+                image_path = latex_to_image(latex_code)
+                await thread.send(file=discord.File(image_path))
+                os.remove(image_path)
             else:
-                if len(buff) + len(part) > MAX_LENGTH:
-                    # 2000字を超える場合は一旦送信
-                    await thread.send(buff)
-                    buff = ''
-                    buff += part
-                else:
-                    # 2000字を超えない場合はバッファに貯める
-                    buff += part
+                # パートが最大長を超えている場合はさらに分割
+                if len(part) > MAX_LENGTH:
+                    # 一旦送信
+                    if len(buff) > 0:
+                        await thread.send(buff)
+                        buff = ''
+                    for i in range(0, len(part), MAX_LENGTH):
+                        # 2000字ごとに送信
+                        buff = ''
+                        buff += part[i:i+MAX_LENGTH]
+                        if len(buff) >= MAX_LENGTH:
+                            await thread.send(part[i:i+MAX_LENGTH])
                     
+                else:
+                    if len(buff) + len(part) > MAX_LENGTH:
+                        # 2000字を超える場合は一旦送信
+                        await thread.send(buff)
+                        buff = ''
+                        buff += part
+                    else:
+                        # 2000字を超えない場合はバッファに貯める
+                        buff += part
+                        
         # 残りを送信
         if len(buff) > 0:
             await thread.send(buff)
 
-    
-intents = discord.Intents.default()
-intents.message_content = True
-client = MyClient(intents=intents)
-client.run(TOKEN)
+
+if __name__ == '__main__':
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = MyClient(intents=intents)
+    client.run(TOKEN)
