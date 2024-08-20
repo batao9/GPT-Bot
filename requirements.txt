@@ -1,5 +1,5 @@
 discord.py == 2.3.2
 openai == 1.21.2
 python-dotenv == 1.0.1
-pdfminer.six == 2023122
+pdfminer.six
 SymPy
