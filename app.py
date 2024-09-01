@@ -213,8 +213,8 @@ class MyClient(discord.Client):
         }
         thred_name = await get_gpt_response(messages, MODEL_GPT4o_MINI, system_message)
         
-        if len(thred_name) > 15: # タイトルが15文字を超える場合は15文字に切り捨て
-            thred_name = thred_name[:15]
+        if len(thred_name) > 99: # タイトルが99文字を超える場合は切り捨て
+            thred_name = thred_name[:99]
         
         return thred_name
             
