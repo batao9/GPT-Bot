@@ -178,7 +178,7 @@ class MyClient(discord.Client):
         # スレッドでメッセージが送られた場合
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
-            messages = [msg async for msg in thread.history(limit=30)]
+            messages = [msg async for msg in thread.history(limit=50)]
             # オリジナルメッセージを追加
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
