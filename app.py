@@ -8,20 +8,51 @@ from pdfminer.high_level import extract_text
 import sympy
 import tempfile
 
-CHANNEL_NAME_GPT4o = 'gpt-4o'
-CHANNEL_NAME_GPT4o_MINI = 'gpt-4o-mini'
-CHANNEL_NAME_GPT4 = 'gpt-4'
-CHANNEL_NAME_GPT35 = 'gpt-3'
-MODEL_GPT4o = 'gpt-4o'
-MODEL_GPT4o_MINI = 'gpt-4o-mini'
-MODEL_GPT4 = 'gpt-4-turbo'
-MODEL_GPT35 = 'gpt-3.5-turbo'
+# GPTのモデル名とチャンネル名のマッピング
+class GPT_Models:
+    # channel name
+    gpt4o_channel = 'gpt-4o'
+    gpt4omini_channel = 'gpt-4o-mini'
+    gpt4_channel = 'gpt-4'
+    gpt35_channel = 'gpt-3'
+    
+    # model name
+    gpt4o = 'gpt-4o'
+    gpt4omini = 'gpt-4o-mini'
+    gpt4 = 'gpt-4-turbo'
+    gpt35 = 'gpt-3.5-turbo'
+    
+    # mapping
+    mappling = {
+                gpt4_channel: gpt4,
+                gpt4o_channel: gpt4o,
+                gpt4omini_channel: gpt4omini,
+                gpt35_channel: gpt35
+            }
+    
+class SytemPrompts:
+    prompts = {
+        'assistant': 
+            """
+            あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
+            応答の際は以下のルールに従ってください。
+            - userから特に指示がない場合は日本語で返答を行う
+            - Markdown形式での応答を行う
+            - Latex math symbolsを含む数式は$$で囲む
+            - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
+            - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
+            """,
+        'thread':
+            """
+            以下のルールを守ってスレッドのタイトルを生成してください。
+            - userのメッセージを元にスレッドのタイトルを生成する
+            - メッセージに対して直接返答を行わない
+            - タイトルは20文字程度以内
+            - タイトルは日本語で記載
+            - タイトルのみを返答する
+            """
+    }
 
-dotenv.load_dotenv()
-TOKEN = os.getenv('TOKEN')
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
-sympy.init_printing()
 
 # latex_to_image関数の定義
 def latex_to_image(latex_code, save_path=None):
@@ -139,16 +170,7 @@ class MyClient(discord.Client):
             "content": [
                 {
                     "type": "text",
-                    "text": """
-                        あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
-                        応答の際は以下のルールに従ってください。
-                        - userから特に指示がない場合は日本語で返答を行う
-                        - Markdown形式での応答を行う
-                        - 数式を含む場合は$$で数式を囲む数式記法を使用する
-                        - Latex math symbolsを含む箇所も$$で囲む
-                        - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
-                        - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
-                        """
+                    "text": SytemPrompts.prompts['assistant']
                 }
             ]
         }
@@ -164,13 +186,7 @@ class MyClient(discord.Client):
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
 
-        model_mapping = {
-            CHANNEL_NAME_GPT4: MODEL_GPT4,
-            CHANNEL_NAME_GPT4o: MODEL_GPT4o,
-            CHANNEL_NAME_GPT4o_MINI: MODEL_GPT4o_MINI,
-            CHANNEL_NAME_GPT35: MODEL_GPT35
-        }
-
+        model_mapping = GPT_Models.mappling
         return model_mapping.get(channel_name) or model_mapping.get(parent_name)
     
     # メッセージを送るスレッドと，スレッドのメッセージ履歴を返す
@@ -201,18 +217,11 @@ class MyClient(discord.Client):
             "content": [
                 {
                     "type": "text",
-                    "text": """
-                        以下のルールを守ってスレッドのタイトルを生成してください。
-                        - userのメッセージを元にスレッドのタイトルを生成する
-                        - メッセージに対して直接返答を行わない
-                        - タイトルは10文字程度
-                        - タイトルは日本語で記載
-                        - タイトルのみを返答する
-                        """
+                    "text": SytemPrompts.prompts['thread']
                 }
             ]
         }
-        thred_name = await get_gpt_response(messages, MODEL_GPT4o_MINI, system_message)
+        thred_name = await get_gpt_response(messages, GPT_Models.gpt4omini, system_message)
         
         if len(thred_name) > 99: # タイトルが99文字を超える場合は切り捨て
             thred_name = thred_name[:99]
@@ -284,9 +293,13 @@ class MyClient(discord.Client):
                     await thread.send(buff)
                     buff = ''
                 latex_code = part
-                image_path = latex_to_image(latex_code)
-                await thread.send(file=discord.File(image_path))
-                os.remove(image_path)
+                try:
+                    image_path = latex_to_image(latex_code)
+                    await thread.send(file=discord.File(image_path))
+                    os.remove(image_path)
+                except Exception as _:
+                    await thread.send(latex_code)
+
             else:
                 # パートが最大長を超えている場合はさらに分割
                 if len(part) > MAX_LENGTH:
@@ -317,6 +330,11 @@ class MyClient(discord.Client):
 
 
 if __name__ == '__main__':
+    dotenv.load_dotenv()
+    TOKEN = os.getenv('TOKEN')
+    openai.api_key = os.getenv('OPENAI_API_KEY')
+    sympy.init_printing()
+
     intents = discord.Intents.default()
     intents.message_content = True
     client = MyClient(intents=intents)
