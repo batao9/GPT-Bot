@@ -7,8 +7,9 @@ import io
 from pdfminer.high_level import extract_text
 import sympy
 import tempfile
+import asyncio
 
-# GPTのモデル名とチャンネル名のマッピング
+
 class GPT_Models:
     # channel name
     gpt4o_channel = 'gpt-4o'
@@ -33,24 +34,40 @@ class GPT_Models:
 class SytemPrompts:
     prompts = {
         'assistant': 
-            """
-            あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
-            応答の際は以下のルールに従ってください。
-            - userから特に指示がない場合は日本語で返答を行う
-            - Markdown形式での応答を行う
-            - Latex math symbolsを含む数式は$$で囲む
-            - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
-            - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
-            """,
+            {
+                "role": "system",
+                "content": [
+                    {
+                    "type": "text",
+                    "text": """
+                        あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
+                        応答の際は以下のルールに従ってください。
+                        - userから特に指示がない場合は日本語で返答を行う
+                        - Markdown形式での応答を行う
+                        - Latex math symbolsを含む数式は$$で囲む
+                        - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
+                        - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
+                        """
+                    }
+                ]
+            },
         'thread':
-            """
-            以下のルールを守ってスレッドのタイトルを生成してください。
-            - userのメッセージを元にスレッドのタイトルを生成する
-            - メッセージに対して直接返答を行わない
-            - タイトルは20文字程度以内
-            - タイトルは日本語で記載
-            - タイトルのみを返答する
-            """
+            {
+            "role": "system",
+            "content": [
+                {
+                "type": "text",
+                "text": """
+                以下のルールを守ってスレッドのタイトルを生成してください。
+                - userのメッセージを元にスレッドのタイトルを生成する
+                - メッセージに対して直接返答を行わない
+                - タイトルは20文字程度以内
+                - タイトルは日本語で記載
+                - タイトルのみを返答する
+                """
+                }
+            ]
+        }
     }
 
 
@@ -164,21 +181,14 @@ class MyClient(discord.Client):
         print ('user:' + message.content)
         thread, messages = await self.get_thread_and_messages(message)
         
-        # GPTのレスポンスを取得し、送信
-        system_message = {
-            "role": "system",
-            "content": [
-                {
-                    "type": "text",
-                    "text": SytemPrompts.prompts['assistant']
-                }
-            ]
-        }
-        
-        gpt_response_future = get_gpt_response(messages, model, system_message)  # GPTのレスポンスを非同期で取得
+        # スレッド名を生成, GPTのレスポンスを取得
+        thread_name_future = self.generate_thread_name(messages)
+        gpt_response_future = get_gpt_response(messages, model, SytemPrompts.prompts['assistant'])
+        thread_name, gpt_response = await asyncio.gather(thread_name_future, gpt_response_future)
 
-        # GPTのレスポンスを取得し、送信
-        gpt_response = await gpt_response_future
+        # スレッド名を更新, GPTのレスポンスを送信
+        if thread and thread_name:
+            await thread.edit(name=thread_name)
         await self.send_response_in_parts(thread, gpt_response)
 
     # チャンネル名に基づいてモデルを返す
@@ -195,15 +205,11 @@ class MyClient(discord.Client):
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
             messages = [msg async for msg in thread.history(limit=50)]
-            # オリジナルメッセージを追加
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
         elif isinstance(message.channel, discord.TextChannel):
-            thread_name_future = self.generate_thread_name([message])  # スレッド名の生成を非同期で開始
             thread = await message.create_thread(name="スレッド名生成中...")  # 一時的なスレッド名で作成
             messages = [message]
-            thread_name = await thread_name_future  # スレッド名の生成を待機
-            await thread.edit(name=thread_name)  # スレッド名を更新
         else:
             thread = None
             messages = []
@@ -211,17 +217,10 @@ class MyClient(discord.Client):
     
     # スレッドの名前を付ける
     async def generate_thread_name(self, messages):
-        # GPT-4oでスレッド名を生成
-        system_message = {
-            "role": "system",
-            "content": [
-                {
-                    "type": "text",
-                    "text": SytemPrompts.prompts['thread']
-                }
-            ]
-        }
-        thred_name = await get_gpt_response(messages, GPT_Models.gpt4omini, system_message)
+        if len(messages) != 1:
+            return None
+        
+        thred_name = await get_gpt_response(messages, GPT_Models.gpt4omini, SytemPrompts.prompts['thread'])
         
         if len(thred_name) > 99: # タイトルが99文字を超える場合は切り捨て
             thred_name = thred_name[:99]
