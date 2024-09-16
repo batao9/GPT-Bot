@@ -83,71 +83,57 @@ def latex_to_image(latex_code, save_path=None):
         else:
             return tmpfile.name
 
+# メッセージからcontent, img_urlsを取得
+async def process_message_content(msg):
+    content = msg.content
+    img_urls = []
+    if msg.attachments:
+        for attachment in msg.attachments:
+            filename = attachment.filename
+            if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):
+                url = attachment.url
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            data = io.BytesIO(await resp.read())
+                            file_text = extract_text(data) if filename.endswith('pdf') else data.read().decode('utf-8')
+                            content = f'{content}\n{filename}\n{file_text}'
+            elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
+                img_urls.append(attachment.url)
+    return content, img_urls
+
 # ChatGPTのレスポンスを取得する
 async def get_gpt_response(messages, model, system_message=None):
     prompt = []
     for msg in messages:
-        # systemメッセージは無視
-        if msg.is_system():
+        if msg.is_system(): 
+            # systemメッセージは無視
             continue
-        # メッセージの中身を取り出して，APIに投げる形に変換
         if msg.author.bot:
-            # botからのメッセージはroleをassistantに
-            prompt.insert(0, {
-                "role": "assistant",
-                "content": [
-                    {
-                        'type': 'text',
-                        'text': msg.content
-                    }
-                ]
-            })
+            role = 'assistant'
         else:
-            content = msg.content
-            img_urls = []
-            # 添付ファイルがある場合はcontentに追加
-            if msg.attachments:
-                for attachment in msg.attachments:
-                    # 添付ファイルのファイル名から拡張子を取得
-                    filename = attachment.filename
-                    if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):  # txt形式のファイル
-                        # 添付ファイルのURLを取得
-                        url = attachment.url
-                        # 添付ファイルの内容を非同期でダウsンロード
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(url) as resp:
-                                if resp.status == 200:
-                                    # ダウンロードした内容をメモリ上に保持
-                                    data = io.BytesIO(await resp.read())
-                                    # テキストとして読み込み（エンコーディングに注意）
-                                    file_text = ''
-                                    if filename.endswith(('pdf')):
-                                        file_text = extract_text(data)
-                                    else:
-                                        file_text = data.read().decode('utf-8')
-                                    # ファイルの内容を結合
-                                    content = f'{content}\n{filename}\n{file_text}'
-                    
-                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):  # 画像の場合
-                        img_urls.append(attachment.url)
-            
-            # roleをuserに
-            prompt.insert(0, {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": content
-                    }
-                ]
-            })
+            role = 'user'
+        
+        # content, img_urlsを取得
+        try:
+            content, img_urls = await process_message_content(msg)
+        except Exception as e:
+            print(f"Error processing message content: {e}")
+            continue
+        
+        # roleをuserに
+        prompt.insert(0, {
+            "role": role,
+            "content": [
+                { "type": "text", "text": content}
+            ]})
 
-            # 画像のURLを追加
-            for url in img_urls:
-                prompt[0]["content"].append({
-                    "type": "image_url",
-                    "image_url": {"url": url},
-                })
+        # 画像のURLを追加
+        for url in img_urls:
+            prompt[0]["content"].append({
+                "type": "image_url",
+                "image_url": {"url": url},
+            })
 
     # system messageを追加
     if system_message is not None:
@@ -296,7 +282,8 @@ class MyClient(discord.Client):
                     image_path = latex_to_image(latex_code)
                     await thread.send(file=discord.File(image_path))
                     os.remove(image_path)
-                except Exception as _:
+                except Exception as e:
+                    print(f'latex_to_image error: {e}')
                     await thread.send(latex_code)
 
             else:
