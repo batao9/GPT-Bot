@@ -129,11 +129,12 @@ async def get_gpt_response(messages, model, system_message=None):
             ]})
 
         # 画像のURLを追加
-        for url in img_urls:
-            prompt[0]["content"].append({
-                "type": "image_url",
-                "image_url": {"url": url},
-            })
+        if role == 'user':
+            for url in img_urls:
+                prompt[0]["content"].append({
+                    "type": "image_url",
+                    "image_url": {"url": url},
+                })
 
     # system messageを追加
     if system_message is not None:
