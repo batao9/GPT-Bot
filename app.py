@@ -176,7 +176,7 @@ class MyClient(discord.Client):
         # スレッド名を更新, GPTのレスポンスを送信
         if thread and thread_name:
             await thread.edit(name=thread_name)
-        await self.send_response_in_parts(thread, gpt_response)
+        await self.send_response(thread, gpt_response)
 
     # チャンネル名に基づいてモデルを返す
     def get_model_based_on_channel(self, channel):
@@ -215,23 +215,14 @@ class MyClient(discord.Client):
         return thred_name
             
     
-    
-    # responseをコードブロックで区切って送信，2000文字超える場合はさらに区切って送信（Discordの文字数上限は2000文字）
-    async def send_response_in_parts(self, thread, response):
-        print (f'bot:{response}')
-        CODE_BLOCK_DELIMITER = "```"
-        LATEX_DELIMITER = "$$"
-        MAX_LENGTH = 2000
-
-        # コードブロックを検出してリストに格納
+    # responseを区切る
+    def split_response(self, response, code_block_delimiter="```", latex_delimiter="$$", max_length=2000):
         parts = []
         current_index = 0
         while current_index < len(response):
-            # 次のコードブロックまたは数式の開始位置を探す
-            start_index_code = response.find(CODE_BLOCK_DELIMITER, current_index)
-            start_index_latex = response.find(LATEX_DELIMITER, current_index)
+            start_index_code = response.find(code_block_delimiter, current_index)
+            start_index_latex = response.find(latex_delimiter, current_index)
             
-            # 次の開始位置を決定
             if start_index_code == -1:
                 start_index = start_index_latex
             elif start_index_latex == -1:
@@ -239,36 +230,42 @@ class MyClient(discord.Client):
             else:
                 start_index = min(start_index_code, start_index_latex)
             
-            # コードブロックも数式も見つからない場合は、残りの文字列を追加して終了
             if start_index == -1:
                 parts.append(response[current_index:])
                 break
 
-            # 終了位置を探す
             if start_index == start_index_code:
-                end_index = response.find(CODE_BLOCK_DELIMITER, start_index + len(CODE_BLOCK_DELIMITER))
-                delimiter_length = len(CODE_BLOCK_DELIMITER)
+                end_index = response.find(code_block_delimiter, start_index + len(code_block_delimiter))
+                delimiter_length = len(code_block_delimiter)
             else:
-                end_index = response.find(LATEX_DELIMITER, start_index + len(LATEX_DELIMITER))
-                delimiter_length = len(LATEX_DELIMITER)
+                end_index = response.find(latex_delimiter, start_index + len(latex_delimiter))
+                delimiter_length = len(latex_delimiter)
             
-            # 終了位置が見つからない場合は、全体を一つのパートとして扱う
             if end_index == -1:
                 parts.append(response[current_index:])
                 break
 
-            # 終了位置を含む位置
             end_index += delimiter_length
 
-            # 開始位置前のテキストを追加
             if start_index > current_index:
-                parts.extend([response[current_index:start_index][i:i+MAX_LENGTH]
-                            for i in range(0, len(response[current_index:start_index]), MAX_LENGTH)])
-            # コードブロックまたは数式を追加
+                parts.extend([response[current_index:start_index][i:i+max_length]
+                            for i in range(0, len(response[current_index:start_index]), max_length)])
             parts.append(response[start_index:end_index])
 
-            # 現在のインデックスを更新
             current_index = end_index
+
+        return parts
+    
+
+    # responseを送信
+    async def send_response(self, thread, response):
+        print (f'bot:{response}')
+        CODE_BLOCK_DELIMITER = "```"
+        LATEX_DELIMITER = "$$"
+        MAX_LENGTH = 2000
+
+        # responseをパーツに分割
+        parts = self.split_response(response, CODE_BLOCK_DELIMITER, LATEX_DELIMITER, MAX_LENGTH)
 
         # パーツを送信
         buff = ''
