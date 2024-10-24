@@ -16,19 +16,25 @@ class GPT_Models:
     gpt4omini_channel = 'gpt-4o-mini'
     gpt4_channel = 'gpt-4'
     gpt35_channel = 'gpt-3'
+    o1_channel = 'o1-preview'
+    o1mini_channel = 'o1-mini'
     
     # model name
     gpt4o = 'gpt-4o'
     gpt4omini = 'gpt-4o-mini'
     gpt4 = 'gpt-4-turbo'
     gpt35 = 'gpt-3.5-turbo'
+    o1_preview = 'o1-preview'
+    o1mini = 'o1-mini'
     
     # mapping
     mappling = {
                 gpt4_channel: gpt4,
                 gpt4o_channel: gpt4o,
                 gpt4omini_channel: gpt4omini,
-                gpt35_channel: gpt35
+                gpt35_channel: gpt35,
+                o1_channel: o1_preview,
+                o1mini: o1mini_channel
             }
     
 class SytemPrompts:
