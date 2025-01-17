@@ -15,33 +15,33 @@ class GPT_Models:
     gpt4o_channel = 'gpt-4o'
     gpt4omini_channel = 'gpt-4o-mini'
     gpt4_channel = 'gpt-4'
-    gpt35_channel = 'gpt-3'
-    o1_channel = 'o1-preview'
-    o1mini_channel = 'o1-mini'
+    o1_channel = 'o1'
+    o1_preview_channel = 'o1-preview'
+    o1_mini_channel = 'o1-mini'
     
     # model name
     gpt4o = 'gpt-4o'
     gpt4omini = 'gpt-4o-mini'
     gpt4 = 'gpt-4-turbo'
-    gpt35 = 'gpt-3.5-turbo'
+    o1 = 'o1'
     o1_preview = 'o1-preview'
-    o1mini = 'o1-mini'
+    o1_mini = 'o1-mini'
     
     # mapping
     mappling = {
                 gpt4_channel: gpt4,
                 gpt4o_channel: gpt4o,
                 gpt4omini_channel: gpt4omini,
-                gpt35_channel: gpt35,
-                o1_channel: o1_preview,
-                o1mini: o1mini_channel
+                o1_channel: o1,
+                o1_preview_channel: o1_preview,
+                o1_mini: o1_mini_channel
             }
     
 class SytemPrompts:
     prompts = {
         'assistant': 
             {
-                "role": "system",
+                "role": "developer",
                 "content": [
                     {
                     "type": "text",
@@ -59,7 +59,7 @@ class SytemPrompts:
             },
         'thread':
             {
-            "role": "system",
+            "role": "developer",
             "content": [
                 {
                 "type": "text",
@@ -144,13 +144,13 @@ async def get_gpt_response(messages, model, system_message=None):
 
     # system messageを追加
     if system_message is not None:
+        if model == 'o1-preview' or 'o1-mini':  # 現時点でo1はdeveloper roleに対応していないための措置
+            system_message["role"] = "user"
         prompt.insert(0, system_message)
 
     # レスポンスを生成
     response = openai.chat.completions.create(
-        model=model,  
-        temperature=0.7,
-        top_p=0.9,
+        model=model,
         messages=prompt
     )
     return response.choices[0].message.content
