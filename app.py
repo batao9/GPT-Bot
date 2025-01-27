@@ -8,34 +8,46 @@ from pdfminer.high_level import extract_text
 import sympy
 import tempfile
 import asyncio
+import json
+from pydantic import BaseModel
 
 
 class GPT_Models:
-    # channel name
-    gpt4o_channel = 'gpt-4o'
-    gpt4omini_channel = 'gpt-4o-mini'
-    gpt4_channel = 'gpt-4'
-    o1_channel = 'o1'
-    o1_preview_channel = 'o1-preview'
-    o1_mini_channel = 'o1-mini'
-    
-    # model name
-    gpt4o = 'gpt-4o'
-    gpt4omini = 'gpt-4o-mini'
-    gpt4 = 'gpt-4-turbo'
-    o1 = 'o1'
-    o1_preview = 'o1-preview'
-    o1_mini = 'o1-mini'
-    
-    # mapping
-    mappling = {
-                gpt4_channel: gpt4,
-                gpt4o_channel: gpt4o,
-                gpt4omini_channel: gpt4omini,
-                o1_channel: o1,
-                o1_preview_channel: o1_preview,
-                o1_mini: o1_mini_channel
-            }
+    @staticmethod
+    def load_mapping(file_path='models.json'):
+        """モデルのマッピングをファイルから読み込む"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print(f"Error: {file_path} が見つかりません。")
+            return {}
+        except json.JSONDecodeError as e:
+            print(f"Error: JSONの読み込みに失敗しました: {e}")
+            return {}
+
+    # マッピングを初期化
+    mappling = load_mapping.__func__()
+
+    @staticmethod
+    def get_model(channel: discord.TextChannel):
+        """チャンネルに対応するモデルを取得する"""
+        channel_name = getattr(channel, 'name', None)
+        parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
+        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mapplling.get(parent_name)
+        if mapping:
+            return mapping["model"]
+        return None
+
+    @staticmethod
+    def get_api_key(channel: discord.TextChannel):
+        """チャンネルに対応するAPIキーを取得する"""
+        channel_name = getattr(channel, 'name', None)
+        parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
+        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mapplling.get(parent_name)
+        if mapping:
+            return mapping["api_key"]
+        return None
     
 class SytemPrompts:
     prompts = {
@@ -77,8 +89,8 @@ class SytemPrompts:
     }
 
 
-# latex_to_image関数の定義
-def latex_to_image(latex_code, save_path=None):
+def latex_to_image(latex_code: str, save_path=None):
+    """LaTeXコードを画像に変換する"""
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
         sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
                       dvioptions=["-T", "tight", "-z", "0", "--truecolor", "-D 600"], 
@@ -89,8 +101,8 @@ def latex_to_image(latex_code, save_path=None):
         else:
             return tmpfile.name
 
-# メッセージからcontent, img_urlsを取得
-async def process_message_content(msg):
+async def process_message_content(msg: discord.Message):
+    """メッセージからコンテンツと画像URLを取得する"""
     content = msg.content
     img_urls = []
     if msg.attachments:
@@ -108,8 +120,17 @@ async def process_message_content(msg):
                 img_urls.append(attachment.url)
     return content, img_urls
 
-# ChatGPTのレスポンスを取得する
-async def get_gpt_response(messages, model, system_message=None):
+async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel, system_message=None):
+    """ChatGPTのレスポンスを取得する"""
+    api_key_env_var = GPT_Models.get_api_key(channel)
+    if not api_key_env_var:
+        raise ValueError(f"モデル {channel.name} に対応するAPIキーが見つかりません。")
+    api_key = os.getenv(api_key_env_var)
+    if not api_key:
+        raise ValueError(f"環境変数 {api_key_env_var} が設定されていません。")
+    model = GPT_Models.get_model(channel)
+    openai.api_key = api_key
+    
     prompt = []
     for msg in messages:
         if msg.is_system(): 
@@ -148,26 +169,55 @@ async def get_gpt_response(messages, model, system_message=None):
             system_message["role"] = "user"
         prompt.insert(0, system_message)
 
-    # レスポンスを生成
     response = openai.chat.completions.create(
         model=model,
         messages=prompt
     )
     return response.choices[0].message.content
 
+async def get_thread_name(messages: list[discord.Message]):
+    """スレッド名を生成する"""
+    class ThreadName(BaseModel):
+        thread_name: str
+    
+    model = 'gpt-4o-mini'
+    api_key = os.getenv('OPENAI_API_KEY')
+    openai.api_key = api_key
+    
+    msg = messages[0]
+    try:
+        content, img_urls = await process_message_content(msg)
+    except Exception as e:
+        print(f"Error processing message content: {e}")
+        
+    prompt = [{"role": "user",
+            "content": [
+                { "type": "text", "text": content}
+                ]}]
+    for url in img_urls:
+        prompt[0]["content"].append({
+            "type": "image_url",
+            "image_url": {"url": url},
+        })
+    prompt.insert(0, SytemPrompts.prompts['thread'])
+        
+    # レスポンスを生成
+    response = openai.beta.chat.completions.parse(
+        model=model,
+        messages=prompt,
+        response_format=ThreadName
+    )
+    
+    return response.choices[0].message.parsed.thread_name    
 
 class MyClient(discord.Client):
     async def on_ready(self):
+        """クライアントが準備完了したときに呼び出される"""
         print(f'Logged on as {self.user}!')
 
-    async def on_message(self, message):
-        # メッセージ送信者がボット自身か、他のボット、またはシステムメッセージの場合は無視
+    async def on_message(self, message: discord.Message):
+        """メッセージを受信したときに呼び出される"""
         if message.author == self.user or message.author.bot or message.is_system():
-            return
-
-        # チャンネル名に基づいてモデルを選択
-        model = self.get_model_based_on_channel(message.channel)
-        if not model:
             return
 
         # スレッドが存在する場合は過去のメッセージを取得し、存在しない場合は新規スレッドを作成
@@ -176,53 +226,44 @@ class MyClient(discord.Client):
         
         # スレッド名を生成, GPTのレスポンスを取得
         thread_name_future = self.generate_thread_name(messages)
-        gpt_response_future = get_gpt_response(messages, model, SytemPrompts.prompts['assistant'])
+        gpt_response_future = get_gpt_response(messages, message.channel, SytemPrompts.prompts['assistant'])
         thread_name, gpt_response = await asyncio.gather(thread_name_future, gpt_response_future)
 
         # スレッド名を更新, GPTのレスポンスを送信
         if thread and thread_name:
             await thread.edit(name=thread_name)
         await self.send_response(thread, gpt_response)
-
-    # チャンネル名に基づいてモデルを返す
-    def get_model_based_on_channel(self, channel):
-        channel_name = getattr(channel, 'name', None)
-        parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
-
-        model_mapping = GPT_Models.mappling
-        return model_mapping.get(channel_name) or model_mapping.get(parent_name)
     
-    # メッセージを送るスレッドと，スレッドのメッセージ履歴を返す
-    async def get_thread_and_messages(self, message):
-        # スレッドでメッセージが送られた場合
+    async def get_thread_and_messages(self, message: discord.Message):
+        """メッセージを送るスレッドと，スレッドのメッセージ履歴を返す"""
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
             messages = [msg async for msg in thread.history(limit=50)]
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
         elif isinstance(message.channel, discord.TextChannel):
-            thread = await message.create_thread(name="スレッド名生成中...")  # 一時的なスレッド名で作成
+            thread = await message.create_thread(name="スレッド名生成中...")
             messages = [message]
         else:
             thread = None
             messages = []
         return thread, messages
     
-    # スレッドの名前を付ける
-    async def generate_thread_name(self, messages):
+    async def generate_thread_name(self, messages: list[discord.Message]):
+        """スレッドの名前を付ける"""
         if len(messages) != 1:
             return None
         
-        thred_name = await get_gpt_response(messages, GPT_Models.gpt4omini, SytemPrompts.prompts['thread'])
+        thred_name = await get_thread_name(messages)
         
-        if len(thred_name) > 99: # タイトルが99文字を超える場合は切り捨て
+        if len(thred_name) > 99:
             thred_name = thred_name[:99]
         
         return thred_name
             
     
-    # responseを区切る
-    def split_response(self, response, code_block_delimiter="```", latex_delimiter="$$", max_length=2000):
+    def split_response(self, response: str, code_block_delimiter="```", latex_delimiter="$$", max_length=2000):
+        """レスポンスを区切る"""
         parts = []
         current_index = 0
         while current_index < len(response):
@@ -263,8 +304,8 @@ class MyClient(discord.Client):
         return parts
     
 
-    # responseを送信
-    async def send_response(self, thread, response):
+    async def send_response(self, thread: discord.TextChannel, response: str):
+        """レスポンスを送信する"""
         print (f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
         LATEX_DELIMITER = "$$"
