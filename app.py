@@ -34,7 +34,7 @@ class GPT_Models:
         """チャンネルに対応するモデルを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
-        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mapplling.get(parent_name)
+        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
         if mapping:
             return mapping["model"]
         return None
@@ -44,10 +44,15 @@ class GPT_Models:
         """チャンネルに対応するAPIキーを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
-        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mapplling.get(parent_name)
+        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
         if mapping:
             return mapping["api_key"]
         return None
+    
+    @staticmethod
+    def is_channel_configured(channel_name: str):
+        """指定されたチャンネル名が設定されているか確認する"""
+        return (channel_name in GPT_Models.mappling)
     
 class SytemPrompts:
     prompts = {
@@ -241,7 +246,7 @@ class MyClient(discord.Client):
             messages = [msg async for msg in thread.history(limit=50)]
             messages.append(await thread.parent.fetch_message(thread.id))
         # チャンネルでメッセージが送られた場合
-        elif isinstance(message.channel, discord.TextChannel):
+        elif isinstance(message.channel, discord.TextChannel) and GPT_Models.is_channel_configured(message.channel.name):
             thread = await message.create_thread(name="スレッド名生成中...")
             messages = [message]
         else:
