@@ -38,16 +38,6 @@ class GPT_Models:
         if mapping:
             return mapping["model"]
         return None
-
-    @staticmethod
-    def get_api_key(channel: discord.TextChannel):
-        """チャンネルに対応するAPIキーを取得する"""
-        channel_name = getattr(channel, 'name', None)
-        parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
-        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
-        if mapping:
-            return mapping["api_key"]
-        return None
     
     @staticmethod
     def is_channel_configured(channel_name: str):
@@ -67,6 +57,7 @@ class SytemPrompts:
                         応答の際は以下のルールに従ってください。
                         - userから特に指示がない場合は日本語で返答を行う
                         - Markdown形式での応答を行う
+                        - 必要な場合はweb上のリソースを参照する
                         - Latex math symbolsを含む数式は$$で囲む
                         - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
                         - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
@@ -127,14 +118,7 @@ async def process_message_content(msg: discord.Message):
 
 async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel, system_message=None):
     """ChatGPTのレスポンスを取得する"""
-    api_key_env_var = GPT_Models.get_api_key(channel)
-    if not api_key_env_var:
-        raise ValueError(f"モデル {channel.name} に対応するAPIキーが見つかりません。")
-    api_key = os.getenv(api_key_env_var)
-    if not api_key:
-        raise ValueError(f"環境変数 {api_key_env_var} が設定されていません。")
     model = GPT_Models.get_model(channel)
-    openai.api_key = api_key
     
     prompt = []
     for msg in messages:
@@ -153,7 +137,6 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
             print(f"Error processing message content: {e}")
             continue
         
-        # roleをuserに
         prompt.insert(0, {
             "role": role,
             "content": [
@@ -170,8 +153,6 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
 
     # system messageを追加
     if system_message is not None:
-        if model == 'o1-preview' or 'o1-mini':  # 現時点でo1はdeveloper roleに対応していないための措置
-            system_message["role"] = "user"
         prompt.insert(0, system_message)
 
     response = openai.chat.completions.create(
@@ -186,8 +167,6 @@ async def get_thread_name(messages: list[discord.Message]):
         thread_name: str
     
     model = 'gpt-4o-mini'
-    api_key = os.getenv('OPENAI_API_KEY')
-    openai.api_key = api_key
     
     msg = messages[0]
     try:
@@ -368,7 +347,6 @@ class MyClient(discord.Client):
 if __name__ == '__main__':
     dotenv.load_dotenv()
     TOKEN = os.getenv('TOKEN')
-    openai.api_key = os.getenv('OPENAI_API_KEY')
     sympy.init_printing()
 
     intents = discord.Intents.default()
