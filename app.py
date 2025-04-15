@@ -47,30 +47,17 @@ class GPT_Models:
 class SytemPrompts:
     prompts = {
         'assistant': 
-            {
-                "role": "developer",
-                "content": [
-                    {
-                    "type": "text",
-                    "text": """
-                        あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
-                        応答の際は以下のルールに従ってください。
-                        - userから特に指示がない場合は日本語で返答を行う
-                        - 必要な場合はweb上のリソースを参照する
-                        - Latex math symbolsを含む数式は$$で囲む
-                        - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
-                        - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
-                        """
-                    }
-                ]
-            },
+                    """
+                    あなたはAIアシスタントです。userのメッセージに対して返答を行ってください。
+                    応答の際は以下のルールに従ってください。
+                    - userから特に指示がない場合は日本語で返答を行う
+                    - 必要な場合はweb上のリソースを参照する
+                    - Latex math symbolsを含む数式は$$で囲む
+                    - プログラムの修正を行う場合は全体をメッセージに含めず，修正箇所のみを示す
+                    - プログラムコードを含む場合は関数ごとなどで細かくコードブロックを分け、2000字を超える長いコードブロックは避ける
+                    """,
         'thread':
-            {
-            "role": "developer",
-            "content": [
-                {
-                "type": "text",
-                "text": """
+                """
                 以下のルールを守ってスレッドのタイトルを生成してください。
                 - userのメッセージを元にスレッドのタイトルを生成する
                 - メッセージに対して直接返答を行わない
@@ -78,9 +65,6 @@ class SytemPrompts:
                 - タイトルは日本語で記載
                 - タイトルのみを返答する
                 """
-                }
-            ]
-        }
     }
 
 
@@ -115,7 +99,7 @@ async def process_message_content(msg: discord.Message):
                 img_urls.append(attachment.url)
     return content, img_urls
 
-async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel, system_message=None):
+async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel):
     """ChatGPTのレスポンスを取得する"""
     model = GPT_Models.get_model(channel)
     
@@ -126,8 +110,10 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
             continue
         if msg.author.bot:
             role = 'assistant'
+            type = 'output_text'
         else:
             role = 'user'
+            type = 'input_text'
         
         # content, img_urlsを取得
         try:
@@ -139,26 +125,26 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
         prompt.insert(0, {
             "role": role,
             "content": [
-                { "type": "text", "text": content}
+                { "type": type, "text": content}
             ]})
 
         # 画像のURLを追加
         if role == 'user':
             for url in img_urls:
                 prompt[0]["content"].append({
-                    "type": "image_url",
-                    "image_url": {"url": url},
+                    "type": "input_image",
+                    "image_url": url,
                 })
 
-    # system messageを追加
-    if system_message is not None:
-        prompt.insert(0, system_message)
-
-    response = openai.chat.completions.create(
+    response = openai_clinet.responses.create(
         model=model,
-        messages=prompt
+        instructions=SytemPrompts.prompts['assistant'],
+        input=prompt,
+        tools=[{"type": "web_search_preview"}],
+        tool_choice="auto",
+        store=False
     )
-    return response.choices[0].message.content
+    return response.output_text
 
 async def get_thread_name(messages: list[discord.Message]):
     """スレッド名を生成する"""
@@ -182,7 +168,13 @@ async def get_thread_name(messages: list[discord.Message]):
             "type": "image_url",
             "image_url": {"url": url},
         })
-    prompt.insert(0, SytemPrompts.prompts['thread'])
+    sys_prompts = {"role": "developer",
+                    "content": [{
+                        "type": "text",
+                        "text": SytemPrompts.prompts['thread']
+                        }]
+                    }
+    prompt.insert(0, sys_prompts)
         
     # レスポンスを生成
     response = openai.beta.chat.completions.parse(
@@ -209,7 +201,7 @@ class MyClient(discord.Client):
         
         # スレッド名を生成, GPTのレスポンスを取得
         thread_name_future = self.generate_thread_name(messages)
-        gpt_response_future = get_gpt_response(messages, message.channel, SytemPrompts.prompts['assistant'])
+        gpt_response_future = get_gpt_response(messages, message.channel)
         thread_name, gpt_response = await asyncio.gather(thread_name_future, gpt_response_future)
 
         # スレッド名を更新, GPTのレスポンスを送信
@@ -348,6 +340,7 @@ if __name__ == '__main__':
     TOKEN = os.getenv('TOKEN')
     sympy.init_printing()
 
+    openai_clinet = openai.OpenAI()
     intents = discord.Intents.default()
     intents.message_content = True
     client = MyClient(intents=intents)

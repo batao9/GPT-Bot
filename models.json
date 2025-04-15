@@ -1,4 +1,4 @@
 {
-    "gpt-4o": { "model": "gpt-4o-search-preview"},
+    "gpt-4o": { "model": "gpt-4o"},
     "o3-mini": { "model": "o3-mini"}
 }
