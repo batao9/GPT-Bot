@@ -1,4 +1,12 @@
 {
-    "gpt-4o": { "model": "gpt-4o"},
-    "o3-mini": { "model": "o3-mini"}
+    "gpt-4o": { 
+        "model": "gpt-4o", 
+        "web_search": true,
+        "img_input": true
+    },
+    "o3-mini": { 
+        "model": "o3-mini",
+        "web_search": false,
+        "img_input": false
+    }
 }
