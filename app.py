@@ -30,14 +30,16 @@ class GPT_Models:
     mappling = load_mapping.__func__()
 
     @staticmethod
-    def get_model(channel: discord.TextChannel):
+    def get_field(channel: discord.TextChannel, key: str):
         """チャンネルに対応するモデルを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
         mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
-        if mapping:
-            return mapping["model"]
-        return None
+        try:
+            if mapping:
+                return mapping[key]
+        except KeyError:
+            return None
     
     @staticmethod
     def is_channel_configured(channel_name: str):
@@ -101,7 +103,9 @@ async def process_message_content(msg: discord.Message):
 
 async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel):
     """ChatGPTのレスポンスを取得する"""
-    model = GPT_Models.get_model(channel)
+    model = GPT_Models.get_field(channel, 'model')
+    web_search = GPT_Models.get_field(channel, 'web_search') or False
+    img_input = GPT_Models.get_field(channel, 'img_input') or False
     
     prompt = []
     for msg in messages:
@@ -129,7 +133,7 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
             ]})
 
         # 画像のURLを追加
-        if role == 'user':
+        if img_input and role == 'user':
             for url in img_urls:
                 prompt[0]["content"].append({
                     "type": "input_image",
@@ -140,7 +144,7 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
         model=model,
         instructions=SytemPrompts.prompts['assistant'],
         input=prompt,
-        tools=[{"type": "web_search_preview"}],
+        tools=[{"type": "web_search_preview"}] if web_search else None,
         tool_choice="auto",
         store=False
     )
