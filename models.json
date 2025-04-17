@@ -8,5 +8,10 @@
         "model": "o3-mini",
         "web_search": false,
         "img_input": false
+    },
+    "o4-mini": {
+        "model": "o4-mini",
+        "web_search": true,
+        "img_input": true
     }
 }
