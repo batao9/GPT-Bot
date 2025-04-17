@@ -114,6 +114,7 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
     """ChatGPTのレスポンスを取得する"""
     model = GPT_Models.get_field(channel, 'model')
     web_search = GPT_Models.get_field(channel, 'web_search') or False
+    code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
     img_input = GPT_Models.get_field(channel, 'img_input') or False
     
     prompt = []
@@ -149,11 +150,15 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
                     "image_url": url,
                 })
 
+    tools = []
+    if web_search: tools.append({"type": "web_search_preview"})
+    if code_interpreter: tools.append({"type": "code_interpreter"})
+    
     response = openai_clinet.responses.create(
         model=model,
         instructions=SytemPrompts.prompts['assistant'],
         input=prompt,
-        tools=[{"type": "web_search_preview"}] if web_search else None,
+        tools=tools,
         tool_choice="auto",
         store=False
     )
