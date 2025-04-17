@@ -4,7 +4,8 @@ import dotenv
 import os
 import aiohttp
 import io
-from pdfminer.high_level import extract_text
+# from pdfminer.high_level import extract_text
+import pymupdf4llm
 import sympy
 import tempfile
 import asyncio
@@ -94,9 +95,17 @@ async def process_message_content(msg: discord.Message):
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url) as resp:
                         if resp.status == 200:
-                            data = io.BytesIO(await resp.read())
-                            file_text = extract_text(data) if filename.endswith('pdf') else data.read().decode('utf-8')
-                            content = f'{content}\n{filename}\n{file_text}'
+                            if filename.endswith('.pdf'):
+                                pdf_bytes = await resp.read()
+                                with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
+                                    tmp_pdf.write(pdf_bytes)
+                                    tmp_pdf.flush()
+                                    file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
+                                    content = f'{content}\n{filename=}\n{file_text}'
+                            else:
+                                data = io.BytesIO(await resp.read())
+                                file_text = data.read().decode('utf-8')
+                                content = f'{content}\n{filename=}\n{file_text}'
             elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
                 img_urls.append(attachment.url)
     return content, img_urls
