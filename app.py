@@ -164,7 +164,7 @@ async def get_thread_name(messages: list[discord.Message]):
     class ThreadName(BaseModel):
         thread_name: str
     
-    model = 'gpt-4o-mini'
+    model = 'gpt-4.1-nano'
     
     msg = messages[0]
     try:
