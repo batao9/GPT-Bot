@@ -312,7 +312,7 @@ class MyClient(discord.Client):
         for part in parts:
             # LaTeX数式を検出して画像に変換
             if part.startswith("$$") and part.endswith("$$"):
-                if len(buff) > 0: 
+                if buff.strip(): 
                     await thread.send(buff)
                     buff = ''
                 latex_code = part
@@ -328,7 +328,7 @@ class MyClient(discord.Client):
                 # パートが最大長を超えている場合はさらに分割
                 if len(part) > MAX_LENGTH:
                     # 一旦送信
-                    if len(buff) > 0:
+                    if buff.strip():
                         await thread.send(buff)
                         buff = ''
                     for i in range(0, len(part), MAX_LENGTH):
@@ -349,7 +349,7 @@ class MyClient(discord.Client):
                         buff += part
                         
         # 残りを送信
-        if len(buff) > 0:
+        if buff.strip():
             await thread.send(buff)
 
 
