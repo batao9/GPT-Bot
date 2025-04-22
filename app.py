@@ -37,11 +37,11 @@ class GPT_Models:
         """チャンネルに対応するモデルを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
-        mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
         try:
+            mapping = GPT_Models.mappling.get(channel_name) or GPT_Models.mappling.get(parent_name)
             if mapping:
                 return mapping[key]
-        except KeyError:
+        except:
             return None
     
     @staticmethod
@@ -245,7 +245,8 @@ class MyClient(discord.Client):
 
     async def on_message(self, message: discord.Message):
         """メッセージを受信したときに呼び出される"""
-        if message.author == self.user or message.author.bot or message.is_system():
+        if message.author == self.user or message.author.bot or \
+            message.is_system() or GPT_Models.get_field(message.channel, 'model') is None:
             return
 
         # スレッドが存在する場合は過去のメッセージを取得し、存在しない場合は新規スレッドを作成
