@@ -3,3 +3,4 @@ openai
 python-dotenv == 1.0.1
 pymupdf4llm
 SymPy
+charset-normalizer
