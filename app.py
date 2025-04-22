@@ -11,6 +11,8 @@ import tempfile
 import asyncio
 import json
 from pydantic import BaseModel
+import charset_normalizer
+import string
 
 
 class GPT_Models:
@@ -83,6 +85,33 @@ def latex_to_image(latex_code: str, save_path=None):
         else:
             return tmpfile.name
 
+
+def is_probably_text(raw: bytes, sample: int = 2048, threshold: float = 0.85) -> bool:
+    """
+    NULL を含めば即 False．
+    含まなければ先頭 sample 文字で printable 率を計算し
+    threshold 以上ならテキストと判定する。
+    """
+    PRINTABLE = set(bytes(string.printable, 'ascii'))
+    head = raw[:sample]
+    if b'\x00' in head:
+        return False
+    printable = sum(b in PRINTABLE for b in head)
+    return printable / max(len(head), 1) >= threshold
+
+
+def detect_encoding(raw: bytes) -> str:
+    """
+    charset-normalizer でエンコーディング推定．
+    見つからなければ UTF‑8 を返す。
+    """
+    best = charset_normalizer.from_bytes(raw).best()
+    if best and best.encoding:
+        enc = best.encoding.replace('_', '-').lower()
+        return enc
+    return 'utf-8'
+
+
 async def process_message_content(msg: discord.Message):
     """メッセージからコンテンツと画像URLを取得する"""
     content = msg.content
@@ -90,24 +119,30 @@ async def process_message_content(msg: discord.Message):
     if msg.attachments:
         for attachment in msg.attachments:
             filename = attachment.filename
-            if filename.endswith(('.txt', '.py', '.md', '.csv', '.c', '.cpp', '.java', 'pdf')):
-                url = attachment.url
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            if filename.endswith('.pdf'):
-                                pdf_bytes = await resp.read()
-                                with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
-                                    tmp_pdf.write(pdf_bytes)
-                                    tmp_pdf.flush()
-                                    file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
-                                    content = f'{content}\n{filename=}\n{file_text}'
-                            else:
-                                data = io.BytesIO(await resp.read())
-                                file_text = data.read().decode('utf-8')
-                                content = f'{content}\n{filename=}\n{file_text}'
-            elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
-                img_urls.append(attachment.url)
+            url = attachment.url
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    raw = await resp.read()
+                    # pdf file
+                    if filename.endswith('.pdf'):
+                        with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
+                            tmp_pdf.write(raw)
+                            tmp_pdf.flush()
+                            file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
+                            content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
+                    # text file
+                    elif is_probably_text(raw):
+                        encording = detect_encoding(raw)
+                        try:
+                            file_text = raw.decode(encording)
+                            content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
+                        except UnicodeError as e:
+                            content = f'{content}\n__file_start__{filename=}\n{e}\n__file_end__'
+                    # img file
+                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
+                        img_urls.append(attachment.url)
     return content, img_urls
 
 async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel):
