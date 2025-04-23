@@ -168,6 +168,9 @@ async def process_message_content(msg: discord.Message):
                     # img file
                     elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
                         img_urls.append(attachment.url)
+                    # other file
+                    else:
+                        content = f'{content}\n__file_start__{filename=}\nCannot open file. Only image files and files that can be opened in text format are supported.\n__file_end__'
     return content, img_urls
 
 async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel):
