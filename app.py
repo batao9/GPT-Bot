@@ -3,8 +3,6 @@ import openai
 import dotenv
 import os
 import aiohttp
-import io
-# from pdfminer.high_level import extract_text
 import pymupdf4llm
 import sympy
 import tempfile
@@ -12,7 +10,6 @@ import asyncio
 import json
 from pydantic import BaseModel
 import charset_normalizer
-import string
 
 
 class GPT_Models:
@@ -111,18 +108,18 @@ def latex_to_image(latex_code: str, save_path=None):
             return tmpfile.name
 
 
-def is_probably_text(raw: bytes, sample: int = 2048, threshold: float = 0.85) -> bool:
+def is_probably_text(raw: bytes, threshold: float = 0.75) -> bool:
     """
-    NULL を含めば即 False．
-    含まなければ先頭 sample 文字で printable 率を計算し
-    threshold 以上ならテキストと判定する。
+    1. NULL バイトがあれば False
+    2. charset_normalizer でベストマッチを取得
+    3. language_confidence（言語推定の信頼度）が閾値以上なら True
     """
-    PRINTABLE = set(bytes(string.printable, 'ascii'))
-    head = raw[:sample]
-    if b'\x00' in head:
+    if b'\x00' in raw:
         return False
-    printable = sum(b in PRINTABLE for b in head)
-    return printable / max(len(head), 1) >= threshold
+    match = charset_normalizer.detect(raw)
+    if not match:
+        return False
+    return match['confidence'] >= threshold
 
 
 def detect_encoding(raw: bytes) -> str:
@@ -157,6 +154,9 @@ async def process_message_content(msg: discord.Message):
                             tmp_pdf.flush()
                             file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
                             content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
+                    # img file
+                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
+                        img_urls.append(attachment.url)
                     # text file
                     elif is_probably_text(raw):
                         encording = detect_encoding(raw)
@@ -165,9 +165,6 @@ async def process_message_content(msg: discord.Message):
                             content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
                         except UnicodeError as e:
                             content = f'{content}\n__file_start__{filename=}\n{e}\n__file_end__'
-                    # img file
-                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
-                        img_urls.append(attachment.url)
                     # other file
                     else:
                         content = f'{content}\n__file_start__{filename=}\nCannot open file. Only image files and files that can be opened in text format are supported.\n__file_end__'
