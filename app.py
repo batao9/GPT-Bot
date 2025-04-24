@@ -14,7 +14,7 @@ import charset_normalizer
 
 class GPT_Models:
     @staticmethod
-    def load_mapping(file_path='models.json'):
+    def load_mapping(file_path: str = 'models.json') -> dict:
         """モデルのマッピングをファイルから読み込む"""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -27,10 +27,10 @@ class GPT_Models:
             return {}
 
     # マッピングを初期化
-    mappling = load_mapping.__func__()
+    mappling: dict = load_mapping.__func__()
 
     @staticmethod
-    def get_field(channel: discord.TextChannel, key: str):
+    def get_field(channel: discord.TextChannel, key: str) -> str:
         """チャンネルに対応するモデルを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
@@ -42,7 +42,7 @@ class GPT_Models:
             return None
     
     @staticmethod
-    def is_channel_configured(channel_name: str):
+    def is_channel_configured(channel_name: str) -> bool:
         """指定されたチャンネル名が設定されているか確認する"""
         return (channel_name in GPT_Models.mappling)
     
@@ -95,7 +95,7 @@ class SytemPrompts:
     }
 
 
-def latex_to_image(latex_code: str, save_path=None):
+def latex_to_image(latex_code: str, save_path: str = None) -> str:
     """LaTeXコードを画像に変換する"""
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
         sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
@@ -134,7 +134,7 @@ def detect_encoding(raw: bytes) -> str:
     return 'utf-8'
 
 
-async def process_message_content(msg: discord.Message):
+async def process_message_content(msg: discord.Message) -> tuple[str, list[str]]:
     """メッセージからコンテンツと画像URLを取得する"""
     content = msg.content
     img_urls = []
@@ -170,7 +170,7 @@ async def process_message_content(msg: discord.Message):
                         content = f'{content}\n__file_start__{filename=}\nCannot open file. Only image files and files that can be opened in text format are supported.\n__file_end__'
     return content, img_urls
 
-async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel):
+async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel) -> str:
     """ChatGPTのレスポンスを取得する"""
     model = GPT_Models.get_field(channel, 'model')
     web_search = GPT_Models.get_field(channel, 'web_search') or False
@@ -224,7 +224,7 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
     )
     return response.output_text
 
-async def get_thread_name(messages: list[discord.Message]):
+async def get_thread_name(messages: list[discord.Message]) -> str:
     """スレッド名を生成する"""
     class ThreadName(BaseModel):
         thread_name: str
@@ -288,7 +288,7 @@ class MyClient(discord.Client):
             await thread.edit(name=thread_name)
         await self.send_response(thread, gpt_response)
     
-    async def get_thread_and_messages(self, message: discord.Message):
+    async def get_thread_and_messages(self, message: discord.Message) -> tuple[discord.Thread | None, list[discord.Message]]:
         """メッセージを送るスレッドと，スレッドのメッセージ履歴を返す"""
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
@@ -303,20 +303,16 @@ class MyClient(discord.Client):
             messages = []
         return thread, messages
     
-    async def generate_thread_name(self, messages: list[discord.Message]):
+    async def generate_thread_name(self, messages: list[discord.Message]) -> str | None:
         """スレッドの名前を付ける"""
         if len(messages) != 1:
             return None
         
-        thred_name = await get_thread_name(messages)
-        
-        if len(thred_name) > 99:
-            thred_name = thred_name[:99]
-        
-        return thred_name
+        thread_name = await get_thread_name(messages)
+        return thread_name[:99] if len(thread_name) > 99 else thread_name
             
     
-    def split_response(self, response: str, code_block_delimiter="```", latex_delimiter="$$", max_length=2000):
+    def split_response(self, response: str, code_block_delimiter="```", latex_delimiter="$$", max_length=2000) -> list[str]:
         """レスポンスを区切る"""
         parts = []
         current_index = 0
