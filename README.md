@@ -22,4 +22,4 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
 
 ## 注意点
 画像は`.png`, `.jpg`, `.gif`, `.webp` に対応
-文章は`.txt`, `.py`, `.md`, `.csv`, `.c`, `.cpp`, `.java`, `pdf`に対応
+文章は一般的な文字コードでエンコード可能なテキスト形式、および`pdf`に対応
