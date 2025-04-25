@@ -9,14 +9,15 @@ import sympy
 import tempfile
 import asyncio
 import json
+import base64
 from pydantic import BaseModel
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 import charset_normalizer
 
 
 class GPT_Models:
     @staticmethod
-    def load_mapping(file_path: str = 'models.json') -> dict:
+    def load_mapping(file_path: str = 'models.json') -> Dict:
         """モデルのマッピングをファイルから読み込む"""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -29,10 +30,10 @@ class GPT_Models:
             return {}
 
     # マッピングを初期化
-    mappling: dict = load_mapping.__func__()
+    mappling: Dict = load_mapping.__func__()
 
     @staticmethod
-    def get_field(channel: discord.TextChannel, key: str) -> str:
+    def get_field(channel: discord.TextChannel, key: str) -> Optional[str]:
         """チャンネルに対応するモデルを取得する"""
         channel_name = getattr(channel, 'name', None)
         parent_name = getattr(channel.parent, 'name', None) if hasattr(channel, 'parent') else None
@@ -48,6 +49,7 @@ class GPT_Models:
         """指定されたチャンネル名が設定されているか確認する"""
         return (channel_name in GPT_Models.mappling)
     
+
 class SytemPrompts:
     prompts = {
         'assistant': 
@@ -137,10 +139,14 @@ def detect_encoding(raw: bytes) -> str:
     return 'utf-8'
 
 
-async def process_message_content(msg: discord.Message) -> tuple[str, list[str]]:
+async def process_message_content(
+    msg: discord.Message,
+    is_img_input: bool = False
+) -> Tuple[str, List[str], List[Dict[str, str]]]:
     """メッセージからコンテンツと画像URLを取得する"""
     content = msg.content
-    img_urls = []
+    pdf_content: List[Dict[str, str]] = []
+    img_urls: List[str] = []
     if msg.attachments:
         for attachment in msg.attachments:
             filename = attachment.filename
@@ -152,70 +158,103 @@ async def process_message_content(msg: discord.Message) -> tuple[str, list[str]]
                     raw = await resp.read()
                     # pdf file
                     if filename.endswith('.pdf'):
-                        with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
-                            tmp_pdf.write(raw)
-                            tmp_pdf.flush()
-                            file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
-                            content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
+                        if is_img_input:
+                            base64_str = base64.b64encode(raw).decode('utf-8')
+                            pdf_content.append({
+                                "filename": filename,
+                                "base64_str": base64_str
+                            })
+                        else:
+                            with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
+                                tmp_pdf.write(raw)
+                                tmp_pdf.flush()
+                                file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
+                                pdf_str = (
+                                    f"{pdf_str}"
+                                    f"\n__file_start__{filename=}\n"
+                                    f"{file_text}\n__file_end__"
+                                )
                     # img file
-                    elif filename.endswith(('.png', '.jpg', '.gif', 'webp')):
+                    elif is_img_input and filename.endswith(('.png', '.jpg', '.gif', 'webp')):
                         img_urls.append(attachment.url)
                     # text file
                     elif is_probably_text(raw):
-                        encording = detect_encoding(raw)
+                        encoding = detect_encoding(raw)
                         try:
-                            file_text = raw.decode(encording)
-                            content = f'{content}\n__file_start__{filename=}\n{file_text}\n__file_end__'
+                            file_text = raw.decode(encoding)
+                            content = (
+                                f"{content}"
+                                f"\n__file_start__{filename=}\n"
+                                f"{file_text}\n__file_end__"
+                            )
                         except UnicodeError as e:
-                            content = f'{content}\n__file_start__{filename=}\n{e}\n__file_end__'
+                            content = (
+                                f"{content}"
+                                f"\n__file_start__{filename=}\n"
+                                f"{e}\n__file_end__"
+                            )
                     # other file
                     else:
-                        content = f'{content}\n__file_start__{filename=}\nCannot open file. Only image files and files that can be opened in text format are supported.\n__file_end__'
-    return content, img_urls
+                        content = (
+                            f"{content}"
+                            f"\n__file_start__{filename=}\n"
+                            "Cannot open file. Only image files and files that can be opened in text format are supported.\n"
+                            "__file_end__"
+                        )
+    return content, img_urls, pdf_content
 
-async def get_gpt_response(messages: list[discord.Message], channel: discord.TextChannel) -> str:
+
+async def get_gpt_response(
+    messages: List[discord.Message],
+    channel: discord.TextChannel
+) -> str:
     """ChatGPTのレスポンスを取得する"""
     model = GPT_Models.get_field(channel, 'model')
-    web_search = GPT_Models.get_field(channel, 'web_search') or False
-    code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
-    img_input = GPT_Models.get_field(channel, 'img_input') or False
+    is_use_web_search = GPT_Models.get_field(channel, 'web_search') or False
+    is_use_code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
+    is_img_input = GPT_Models.get_field(channel, 'img_input') or False
     
     prompt = []
     for msg in messages:
-        if msg.is_system(): 
-            # systemメッセージは無視
+        if msg.is_system():
             continue
         if msg.author.bot:
             role = 'assistant'
-            type = 'output_text'
+            typ = 'output_text'
         else:
             role = 'user'
-            type = 'input_text'
+            typ = 'input_text'
         
-        # content, img_urlsを取得
         try:
-            content, img_urls = await process_message_content(msg)
+            content, img_urls, pdf_content = await process_message_content(msg, is_img_input)
         except Exception as e:
             print(f"Error processing message content: {e}")
             continue
         
         prompt.insert(0, {
             "role": role,
-            "content": [
-                { "type": type, "text": content}
-            ]})
+            "content": [{"type": typ, "text": content}]
+        })
 
-        # 画像のURLを追加
-        if img_input and role == 'user':
+        if is_img_input and role == 'user':
             for url in img_urls:
                 prompt[0]["content"].append({
                     "type": "input_image",
                     "image_url": url,
                 })
+            for pdf in pdf_content:
+                pdf_base64 = pdf["base64_str"]
+                prompt[0]["content"].append({
+                    "type": "input_file",
+                    "filename": pdf["filename"],
+                    "file_data": f"data:application/pdf;base64,{pdf_base64}",
+                })
 
     tools = []
-    if web_search: tools.append({"type": "web_search_preview"})
-    if code_interpreter: tools.append({"type": "code_interpreter"})
+    if is_use_web_search:
+        tools.append({"type": "web_search_preview"})
+    if is_use_code_interpreter:
+        tools.append({"type": "code_interpreter"})
     
     response = openai_clinet.responses.create(
         model=model,
@@ -227,31 +266,42 @@ async def get_gpt_response(messages: list[discord.Message], channel: discord.Tex
     )
     return response.output_text
 
-async def get_thread_name(messages: list[discord.Message]) -> str:
+
+async def get_thread_name(
+    messages: List[discord.Message]
+) -> str:
     """スレッド名を生成する"""
     class ThreadName(BaseModel):
         thread_name: str
     
     model = 'gpt-4.1-nano'
-    
+    is_img_input = GPT_Models.get_field(messages[0].channel, 'img_input') or False
     msg = messages[0]
+    
     try:
-        content, img_urls = await process_message_content(msg)
+        content, img_urls, pdf_content = await process_message_content(msg, is_img_input)
     except Exception as e:
         print(f"Error processing message content: {e}")
         return 'title gen error'
         
-    prompt = [{"role": "user",
-            "content": [
-                { "type": "input_text", "text": content}
-                ]}]
-    for url in img_urls:
-        prompt[0]["content"].append({
-            "type": "input_image",
-            "image_url": url,
-        })
+    prompt = [{
+        "role": "user",
+        "content": [{"type": "input_text", "text": content}]
+    }]
+    if is_img_input:
+        for url in img_urls:
+            prompt[0]["content"].append({
+                "type": "input_image",
+                "image_url": url,
+            })
+        for pdf in pdf_content:
+            pdf_base64 = pdf["base64_str"]
+            prompt[0]["content"].append({
+                "type": "input_file",
+                "filename": pdf["filename"],
+                "file_data": f"data:application/pdf;base64,{pdf_base64}",
+            })
         
-    # レスポンスを生成
     response = openai_clinet.responses.parse(
         model=model,
         instructions=SytemPrompts.prompts['thread'],
@@ -261,39 +311,49 @@ async def get_thread_name(messages: list[discord.Message]) -> str:
     
     return response.output_parsed.thread_name
 
+
 class MyClient(discord.Client):
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         """クライアントが準備完了したときに呼び出される"""
         print(f'Logged on as {self.user}!')
 
-    async def on_message(self, message: discord.Message):
+    async def on_message(self, message: discord.Message) -> None:
         """メッセージを受信したときに呼び出される"""
-        if message.author == self.user or message.author.bot or \
-            message.is_system() or GPT_Models.get_field(message.channel, 'model') is None:
+        if (
+            message.author == self.user or
+            message.author.bot or
+            message.is_system() or
+            GPT_Models.get_field(message.channel, 'model') is None
+        ):
             return
 
-        # スレッドが存在する場合は過去のメッセージを取得し、存在しない場合は新規スレッドを作成
-        print ('user:' + message.content)
+        print('user:' + message.content)
         thread, messages = await self.get_thread_and_messages(message)
         
-        # スレッド名を生成, GPTのレスポンスを取得
         thread_name_future = self.generate_thread_name(messages)
         gpt_response_future = get_gpt_response(messages, message.channel)
-        thread_name, gpt_response = await asyncio.gather(thread_name_future, gpt_response_future)
+        thread_name, gpt_response = await asyncio.gather(
+            thread_name_future,
+            gpt_response_future
+        )
 
-        # スレッド名を更新, GPTのレスポンスを送信
         if thread and thread_name:
             await thread.edit(name=thread_name)
         await self.send_response(thread, gpt_response)
     
-    async def get_thread_and_messages(self, message: discord.Message) -> Tuple[Optional[discord.Thread], list[discord.Message]]:
+    async def get_thread_and_messages(
+        self,
+        message: discord.Message
+    ) -> Tuple[Optional[discord.Thread], List[discord.Message]]:
         """メッセージを送るスレッドと，スレッドのメッセージ履歴を返す"""
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
             messages = [msg async for msg in thread.history(limit=50)]
             messages.append(await thread.parent.fetch_message(thread.id))
-        # チャンネルでメッセージが送られた場合
-        elif isinstance(message.channel, discord.TextChannel) and GPT_Models.is_channel_configured(message.channel.name):
+        elif (
+            isinstance(message.channel, discord.TextChannel) and
+            GPT_Models.is_channel_configured(message.channel.name)
+        ):
             thread = await message.create_thread(name="スレッド名生成中...")
             messages = [message]
         else:
@@ -301,7 +361,10 @@ class MyClient(discord.Client):
             messages = []
         return thread, messages
     
-    async def generate_thread_name(self, messages: list[discord.Message]) -> Optional[str]:
+    async def generate_thread_name(
+        self,
+        messages: List[discord.Message]
+    ) -> Optional[str]:
         """スレッドの名前を付ける"""
         if len(messages) != 1:
             return None
@@ -316,7 +379,7 @@ class MyClient(discord.Client):
         code_block_delimiter: str = "```",
         latex_delimiter: str = "$$",
         max_length: int = 2000,
-        ) -> list[str]:
+    ) -> List[str]:
         """
         Discord の 2000 文字制限を守りつつレスポンスを分割する。
 
@@ -332,13 +395,13 @@ class MyClient(discord.Client):
         # ------------------------------------------------------------------
         # 共通ユーティリティ
         # ------------------------------------------------------------------
-        def _smart_split(text: str, limit: int) -> list[str]:
-            """通常テキストを limit 以下で自然な区切り（空白/改行/句読点など）で分割"""
+        def _smart_split(text: str, limit: int) -> List[str]:
+            """通常テキストを limit 以下で自然な区切りで分割"""
             delimiters = [
                 " ", "\n", "。", "、", ",", ".", "，", "．", ";",
                 "!", "?", "！", "？"
             ]
-            chunks: list[str] = []
+            chunks: List[str] = []
             start = 0
             length = len(text)
 
@@ -357,22 +420,19 @@ class MyClient(discord.Client):
                     if pos > split_pos:
                         split_pos = pos
 
-                if split_pos <= 0:           # 区切り文字が見つからない
+                if split_pos <= 0:
                     split_pos = limit
                 else:
-                    split_pos += 1           # 区切り文字も含める
+                    split_pos += 1
 
                 chunks.append(text[start:start + split_pos])
                 start += split_pos
             return chunks
 
-        def _split_code_block(block: str, limit: int) -> list[str]:
+        def _split_code_block(block: str, limit: int) -> List[str]:
             """
-            コードブロック( ```lang\n ... \n``` )を改行単位で limit 以下に分割。
-            各チャンクを ```lang\n...\n``` で包み直して返す。  
-            （先頭行の ```lang の `lang` 部分も長さとして考慮する）
+            コードブロックを改行単位で分割し、再ラップして返す
             """
-            # 先頭行：「```lang」
             first_nl = block.find("\n")
             if first_nl == -1:
                 return [block]  # 1 行しか無い異常系
@@ -397,15 +457,14 @@ class MyClient(discord.Client):
                 return [block]
 
             lines = inner.split("\n")
-
-            chunks: list[str] = []
+            chunks: List[str] = []
             buf = ""
             max_body = max(limit - overhead, 1)  # コンテンツ部で許容される最大長
 
             for line in lines:
                 candidate = f"{buf}\n{line}" if buf else line
                 if len(candidate) > max_body:
-                    if buf:                      # 直前までの buf を確定
+                    if buf:
                         chunks.append(buf)
                         buf = ""
                     # 単一行が max_body を超える場合は強制分割
@@ -418,28 +477,21 @@ class MyClient(discord.Client):
             if buf:
                 chunks.append(buf)
 
-            # ラップして返す
             return [f"{header}\n{chunk}\n{footer}" for chunk in chunks]
 
-        def _split_latex_block(block: str, limit: int) -> list[str]:
+        def _split_latex_block(block: str, limit: int) -> List[str]:
             """
-            LaTeX ブロック ($$ ... $$) を limit 以下に分割して返す。  
-            先頭と末尾の latex_delimiter 分のオーバーヘッドを考慮し、
-            各チャンクがラップ後も limit を超えないようにする。
+            LaTeX ブロックを分割し、再ラップして返す
             """
-            # 開始・終了のデリミタ分の長さ（オーバーヘッド）を計算
             overhead = len(latex_delimiter) * 2
-            inner_limit = max(limit - overhead, 1)  # コンテンツ部で許容される最大長
+            inner_limit = max(limit - overhead, 1)
 
-            # デリミタを除いた中身を取得
             inner = block[len(latex_delimiter) : -len(latex_delimiter)]
             if len(inner) <= inner_limit:
                 return [block]
 
             # オーバーヘッドを差し引いた長さでスマート分割
             segments = _smart_split(inner, inner_limit)
-
-            # 再ラップして返却
             return [f"{latex_delimiter}{seg}{latex_delimiter}" for seg in segments]
 
         # ------------------------------------------------------------------
@@ -451,7 +503,7 @@ class MyClient(discord.Client):
             re.DOTALL,
         )
 
-        blocks: list[str] = []
+        blocks: List[str] = []
         last_idx = 0
         for m in pattern.finditer(response):
             if m.start() > last_idx:               # 直前の通常テキスト
@@ -464,7 +516,7 @@ class MyClient(discord.Client):
         # ------------------------------------------------------------------
         # ブロックごとに分割処理
         # ------------------------------------------------------------------
-        parts: list[str] = []
+        parts: List[str] = []
         for block in blocks:
             if block.startswith(code_block_delimiter):
                 # コードブロック
@@ -489,9 +541,13 @@ class MyClient(discord.Client):
         return [p for p in parts if p.strip()]
     
 
-    async def send_response(self, thread: discord.TextChannel, response: str):
+    async def send_response(
+        self,
+        thread: discord.TextChannel,
+        response: str
+    ) -> None:
         """レスポンスを送信する"""
-        print (f'bot:{response}')
+        print(f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
         LATEX_DELIMITER = "$$"
         MAX_LENGTH = 2000
@@ -510,7 +566,7 @@ class MyClient(discord.Client):
                     if len(buff) + len(latex_code) > MAX_LENGTH:
                         await thread.send(buff)
                         buff = ''
-                    await thread.send(buff+latex_code, file=discord.File(image_path))
+                    await thread.send(buff + latex_code, file=discord.File(image_path))
                     os.remove(image_path)
                     buff = '' 
                 except Exception as e:
@@ -519,8 +575,7 @@ class MyClient(discord.Client):
                         await thread.send(buff)
                         buff = ''
                     buff += part
-
-            else:    
+            else:
                 if len(buff) + len(part) > MAX_LENGTH:
                     await thread.send(buff)
                     buff = ''
