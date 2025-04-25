@@ -87,11 +87,12 @@ class SytemPrompts:
                     """,
         'thread':
                 """
+                あなたはスレッド管理システムです。
                 以下のルールを守ってスレッドのタイトルを生成してください。
                 - userのメッセージを元にスレッドのタイトルを生成する
                 - メッセージに対して直接返答を行わない
                 - タイトルは20文字程度以内
-                - タイトルは日本語で記載
+                - タイトルはuserの入力と同じ言語
                 - タイトルのみを返答する
                 """
     }
@@ -238,32 +239,27 @@ async def get_thread_name(messages: list[discord.Message]) -> str:
         content, img_urls = await process_message_content(msg)
     except Exception as e:
         print(f"Error processing message content: {e}")
+        return 'title gen error'
         
     prompt = [{"role": "user",
             "content": [
-                { "type": "text", "text": content}
+                { "type": "input_text", "text": content}
                 ]}]
     for url in img_urls:
         prompt[0]["content"].append({
-            "type": "image_url",
-            "image_url": {"url": url},
+            "type": "input_image",
+            "image_url": url,
         })
-    sys_prompts = {"role": "developer",
-                    "content": [{
-                        "type": "text",
-                        "text": SytemPrompts.prompts['thread']
-                        }]
-                    }
-    prompt.insert(0, sys_prompts)
         
     # レスポンスを生成
-    response = openai.beta.chat.completions.parse(
+    response = openai_clinet.responses.parse(
         model=model,
-        messages=prompt,
-        response_format=ThreadName
+        instructions=SytemPrompts.prompts['thread'],
+        input=prompt,
+        text_format=ThreadName
     )
     
-    return response.choices[0].message.parsed.thread_name    
+    return response.output_parsed.thread_name
 
 class MyClient(discord.Client):
     async def on_ready(self):
