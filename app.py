@@ -306,7 +306,8 @@ async def get_thread_name(
         model=model,
         instructions=SytemPrompts.prompts['thread'],
         input=prompt,
-        text_format=ThreadName
+        text_format=ThreadName,
+        store=False
     )
     
     return response.output_parsed.thread_name
