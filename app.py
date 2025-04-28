@@ -349,7 +349,7 @@ class MyClient(discord.Client):
         """メッセージを送るスレッドと，スレッドのメッセージ履歴を返す"""
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
-            messages = [msg async for msg in thread.history(limit=50)]
+            messages = [msg async for msg in thread.history(limit=100)]
             messages.append(await thread.parent.fetch_message(thread.id))
         elif (
             isinstance(message.channel, discord.TextChannel) and
