@@ -4,6 +4,11 @@
         "web_search": true,
         "img_input": true
     },
+    "o4-mini-high": {
+        "model": "o4-mini",
+        "reasoning_effort": "high",
+        "img_input": true
+    },
     "discord channel name": { 
         "model": "model name",
         "web_search": false,

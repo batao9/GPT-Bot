@@ -210,6 +210,7 @@ async def get_gpt_response(
 ) -> str:
     """ChatGPTのレスポンスを取得する"""
     model = GPT_Models.get_field(channel, 'model')
+    reasoning_effort = GPT_Models.get_field(channel, 'reasoning_effort') or None
     is_use_web_search = GPT_Models.get_field(channel, 'web_search') or False
     is_use_code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
     is_img_input = GPT_Models.get_field(channel, 'img_input') or False
@@ -256,9 +257,10 @@ async def get_gpt_response(
     if is_use_code_interpreter:
         tools.append({"type": "code_interpreter"})
     
-    response = openai_clinet.responses.create(
+    response = openai_client.responses.create(
         model=model,
         instructions=SytemPrompts.prompts['assistant'],
+        reasoning={"effort": reasoning_effort} if reasoning_effort else None,
         input=prompt,
         tools=tools,
         tool_choice="auto",
@@ -302,7 +304,7 @@ async def get_thread_name(
                 "file_data": f"data:application/pdf;base64,{pdf_base64}",
             })
         
-    response = openai_clinet.responses.parse(
+    response = openai_client.responses.parse(
         model=model,
         instructions=SytemPrompts.prompts['thread'],
         input=prompt,
@@ -592,7 +594,7 @@ if __name__ == '__main__':
     TOKEN = os.getenv('TOKEN')
     sympy.init_printing()
 
-    openai_clinet = openai.OpenAI()
+    openai_client = openai.OpenAI()
     intents = discord.Intents.default()
     intents.message_content = True
     client = MyClient(intents=intents)
