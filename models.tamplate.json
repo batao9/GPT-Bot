@@ -10,8 +10,10 @@
         "img_input": true
     },
     "discord channel name": { 
-        "model": "model name",
-        "web_search": false,
-        "img_input": false
+        "model": "model name / required.",
+        "provider": "openai, anthropic, gemini, xai or deepseek / default is openai.",
+        "reasoning_effort": "low, medium or high / default is medium. OpenAI's o-series models only.",
+        "web_search": "true or false / default is false. openai model only.",
+        "img_input": "true or false / default is false."
     }
 }
