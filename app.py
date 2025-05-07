@@ -135,16 +135,15 @@ async def process_message_content(
     msg: discord.Message,
     is_img_input: bool = False
 ) -> Tuple[str, List[str], List[Dict[str, str]]]:
-    """メッセージからコンテンツと画像URLを取得する"""
+    """メッセージからコンテンツと添付ファイルを取得する"""
     content = msg.content
     pdf_content: List[Dict[str, str]] = []
-    img_urls: List[str] = []
+    img_content: List[str] = []
     if msg.attachments:
         for attachment in msg.attachments:
             filename = attachment.filename
-            url = attachment.url
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
+                async with session.get(attachment.url) as resp:
                     if resp.status != 200:
                         continue
                     raw = await resp.read()
@@ -167,8 +166,8 @@ async def process_message_content(
                                     f"{file_text}\n__file_end__"
                                 )
                     # img file
-                    elif is_img_input and filename.endswith(('.png', '.jpg', '.gif', 'webp')):
-                        img_urls.append(attachment.url)
+                    elif is_img_input and filename.endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
+                        img_content.append(base64.b64encode(raw).decode('utf-8'))
                     # text file
                     elif is_probably_text(raw):
                         encoding = detect_encoding(raw)
@@ -193,9 +192,54 @@ async def process_message_content(
                             "Cannot open file. Only image files and files that can be opened in text format are supported.\n"
                             "__file_end__"
                         )
-    return content, img_urls, pdf_content
+    return content, img_content, pdf_content
 
+async def get_chat_completion_response(
+    messages: List[discord.Message],
+    model: str,
+    is_img_input: bool = False,
+    provider: str = ''
+) -> str:
+    """Chat Completion API互換モデルのレスポンスを取得する"""
+    prompt = []
+    for msg in messages:
+        if msg.is_system(): 
+            continue
+        if msg.author.bot:
+            role = 'assistant'
+        else:
+            role = 'user'
+        
+        try:
+            content, img_content, _ = await process_message_content(msg)
+        except Exception as e:
+            print(f"Error processing message content: {e}")
+            continue
+        
+        prompt.insert(0, {
+            "role": role,
+            "content": [
+                { "type": "text", "text": content}
+            ]})
 
+        # 画像のURLを追加
+        if role == 'user' and is_img_input:
+            for img_base64 in img_content:
+                prompt[0]["content"].append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
+                })
+
+    # system messageを追加
+    prompt.insert(0, {"role": "system", "content": SytemPrompts.prompts['assistant']})
+
+    response = clients[provider].chat.completions.create(
+        model=model,
+        messages=prompt
+    )
+    return response.choices[0].message.content
+
+    
 async def get_gpt_response(
     messages: List[discord.Message],
     channel: discord.TextChannel
@@ -206,6 +250,15 @@ async def get_gpt_response(
     is_use_web_search = GPT_Models.get_field(channel, 'web_search') or False
     is_use_code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
     is_img_input = GPT_Models.get_field(channel, 'img_input') or False
+    provider = GPT_Models.get_field(channel, 'provider') or 'openai'
+    
+    if provider != 'openai':
+        return await get_chat_completion_response(
+            messages,
+            model=model,
+            is_img_input=is_img_input,
+            provider=provider
+        )
     
     prompt = []
     for msg in messages:
@@ -219,7 +272,7 @@ async def get_gpt_response(
             typ = 'input_text'
         
         try:
-            content, img_urls, pdf_content = await process_message_content(msg, is_img_input)
+            content, img_content, pdf_content = await process_message_content(msg, is_img_input)
         except Exception as e:
             print(f"Error processing message content: {e}")
             continue
@@ -230,10 +283,10 @@ async def get_gpt_response(
         })
 
         if is_img_input and role == 'user':
-            for url in img_urls:
+            for img_base64 in img_content:
                 prompt[0]["content"].append({
                     "type": "input_image",
-                    "image_url": url,
+                    "image_url": f"data:image/jpeg;base64,{img_base64}",
                 })
             for pdf in pdf_content:
                 pdf_base64 = pdf["base64_str"]
@@ -249,7 +302,7 @@ async def get_gpt_response(
     if is_use_code_interpreter:
         tools.append({"type": "code_interpreter"})
     
-    response = openai_client.responses.create(
+    response = clients['openai'].responses.create(
         model=model,
         instructions=SytemPrompts.prompts['assistant'],
         reasoning={"effort": reasoning_effort} if reasoning_effort else None,
@@ -273,7 +326,7 @@ async def get_thread_name(
     msg = messages[0]
     
     try:
-        content, img_urls, pdf_content = await process_message_content(msg, is_img_input)
+        content, img_content, pdf_content = await process_message_content(msg, is_img_input)
     except Exception as e:
         print(f"Error processing message content: {e}")
         return 'title gen error'
@@ -283,10 +336,10 @@ async def get_thread_name(
         "content": [{"type": "input_text", "text": content}]
     }]
     if is_img_input:
-        for url in img_urls:
+        for img_base64 in img_content:
             prompt[0]["content"].append({
                 "type": "input_image",
-                "image_url": url,
+                "image_url": f"data:image/jpeg;base64,{img_base64}",
             })
         for pdf in pdf_content:
             pdf_base64 = pdf["base64_str"]
@@ -296,7 +349,7 @@ async def get_thread_name(
                 "file_data": f"data:application/pdf;base64,{pdf_base64}",
             })
         
-    response = openai_client.responses.parse(
+    response = clients["openai"].responses.parse(
         model=model,
         instructions=SytemPrompts.prompts['thread'],
         input=prompt,
@@ -585,9 +638,21 @@ if __name__ == '__main__':
     dotenv.load_dotenv()
     TOKEN = os.getenv('TOKEN')
     sympy.init_printing()
-
-    openai_client = openai.OpenAI()
+    clients = {'openai': openai.OpenAI(),
+               'anthropic': openai.OpenAI(
+                     api_key=os.getenv('ANTHROPIC_API_KEY'),
+                     base_url="https://api.anthropic.com/v1/"),
+               'gemini': openai.OpenAI(
+                     api_key=os.getenv('GEMINI_API_KEY'),
+                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"),
+               'deepseek': openai.OpenAI(
+                     api_key=os.getenv('DEEPSEEK_API_KEY'),
+                     base_url="https://api.deepseek.com"),
+               'xai': openai.OpenAI(
+                     api_key=os.getenv('XAI_API_KEY'),
+                     base_url="https://api.x.ai/v1"),
+    }
     intents = discord.Intents.default()
     intents.message_content = True
-    client = MyClient(intents=intents)
-    client.run(TOKEN)
+    discord_client = MyClient(intents=intents)
+    discord_client.run(TOKEN)
