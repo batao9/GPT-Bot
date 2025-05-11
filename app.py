@@ -239,27 +239,15 @@ async def get_chat_completion_response(
     )
     return response.choices[0].message.content
 
-    
-async def get_gpt_response(
+async def get_openai_response(
     messages: List[discord.Message],
-    channel: discord.TextChannel
-) -> str:
-    """ChatGPTのレスポンスを取得する"""
-    model = GPT_Models.get_field(channel, 'model')
-    reasoning_effort = GPT_Models.get_field(channel, 'reasoning_effort') or None
-    is_use_web_search = GPT_Models.get_field(channel, 'web_search') or False
-    is_use_code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
-    is_img_input = GPT_Models.get_field(channel, 'img_input') or False
-    provider = GPT_Models.get_field(channel, 'provider') or 'openai'
-    
-    if provider != 'openai':
-        return await get_chat_completion_response(
-            messages,
-            model=model,
-            is_img_input=is_img_input,
-            provider=provider
-        )
-    
+    model: str,
+    is_img_input: bool = False,
+    is_use_web_search: bool = False,
+    is_use_code_interpreter: bool = False,
+    reasoning_effort: Optional[str] = None
+):
+    """OpenAI APIのレスポンスを取得する"""
     prompt = []
     for msg in messages:
         if msg.is_system():
@@ -312,6 +300,44 @@ async def get_gpt_response(
         store=False
     )
     return response.output_text
+    
+async def get_LLM_response(
+    messages: List[discord.Message],
+    channel: discord.TextChannel
+) -> str:
+    """ChatGPTのレスポンスを取得する"""
+    provider = GPT_Models.get_field(channel, 'provider') or 'openai'
+    model = GPT_Models.get_field(channel, 'model')
+    is_img_input = GPT_Models.get_field(channel, 'img_input') or False
+    is_use_web_search = GPT_Models.get_field(channel, 'web_search') or False
+    is_use_code_interpreter = GPT_Models.get_field(channel, 'code_interpreter') or False
+    reasoning_effort = GPT_Models.get_field(channel, 'reasoning_effort') or None
+    
+    if provider == 'openai':
+        return await get_openai_response(
+            messages,
+            model=model,
+            is_img_input=is_img_input,
+            is_use_web_search=is_use_web_search,
+            is_use_code_interpreter=is_use_code_interpreter,
+            reasoning_effort=reasoning_effort
+        )
+    
+    if provider == 'gemini':
+        return await get_chat_completion_response(
+            messages,
+            model=model,
+            is_img_input=is_img_input,
+            provider=provider
+        )
+    
+    if provider != 'openai':
+        return await get_chat_completion_response(
+            messages,
+            model=model,
+            is_img_input=is_img_input,
+            provider=provider
+        )
 
 
 async def get_thread_name(
@@ -379,7 +405,7 @@ class MyClient(discord.Client):
         thread, messages = await self.get_thread_and_messages(message)
         
         thread_name_future = self.generate_thread_name(messages)
-        gpt_response_future = get_gpt_response(messages, message.channel)
+        gpt_response_future = get_LLM_response(messages, message.channel)
         thread_name, gpt_response = await asyncio.gather(
             thread_name_future,
             gpt_response_future
