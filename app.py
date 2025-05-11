@@ -1,5 +1,8 @@
 import discord
 import openai
+from google import genai
+from google.genai import types
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 import dotenv
 import os
 import re
@@ -13,6 +16,7 @@ import base64
 from pydantic import BaseModel
 from typing import Optional, Tuple, List, Dict
 import charset_normalizer
+import httpx
 
 
 class GPT_Models:
@@ -133,12 +137,13 @@ def detect_encoding(raw: bytes) -> str:
 
 async def process_message_content(
     msg: discord.Message,
-    is_img_input: bool = False
-) -> Tuple[str, List[str], List[Dict[str, str]]]:
+    is_img_input: bool = False,
+    is_pdf_input: bool = False
+) -> Tuple[str, List[Dict], List[Dict]]:
     """メッセージからコンテンツと添付ファイルを取得する"""
     content = msg.content
-    pdf_content: List[Dict[str, str]] = []
-    img_content: List[str] = []
+    img_content: List[Dict] = []
+    pdf_content: List[Dict] = []
     if msg.attachments:
         for attachment in msg.attachments:
             filename = attachment.filename
@@ -149,25 +154,28 @@ async def process_message_content(
                     raw = await resp.read()
                     # pdf file
                     if filename.endswith('.pdf'):
-                        if is_img_input:
+                        if is_img_input and is_pdf_input:
                             base64_str = base64.b64encode(raw).decode('utf-8')
+                            httpx_data = httpx.get(attachment.url).content
                             pdf_content.append({
                                 "filename": filename,
-                                "base64_str": base64_str
+                                "base64_str": base64_str,
+                                "raw": httpx_data
                             })
                         else:
                             with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as tmp_pdf:
                                 tmp_pdf.write(raw)
                                 tmp_pdf.flush()
                                 file_text = pymupdf4llm.to_markdown(tmp_pdf.name)
-                                pdf_str = (
-                                    f"{pdf_str}"
+                                content = ( # Changed from pdf_str to content
+                                    f"{content}"
                                     f"\n__file_start__{filename=}\n"
                                     f"{file_text}\n__file_end__"
                                 )
                     # img file
                     elif is_img_input and filename.endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
-                        img_content.append(base64.b64encode(raw).decode('utf-8'))
+                        extension = filename.split('.')[-1]
+                        img_content.append({"raw": raw, "extension": extension})
                     # text file
                     elif is_probably_text(raw):
                         encoding = detect_encoding(raw)
@@ -182,7 +190,7 @@ async def process_message_content(
                             content = (
                                 f"{content}"
                                 f"\n__file_start__{filename=}\n"
-                                f"{e}\n__file_end__"
+                                f"Error decoding file: {e}\n__file_end__" # Added error message
                             )
                     # other file
                     else:
@@ -193,6 +201,7 @@ async def process_message_content(
                             "__file_end__"
                         )
     return content, img_content, pdf_content
+
 
 async def get_chat_completion_response(
     messages: List[discord.Message],
@@ -224,7 +233,8 @@ async def get_chat_completion_response(
 
         # 画像のURLを追加
         if role == 'user' and is_img_input:
-            for img_base64 in img_content:
+            for img in img_content:
+                img_base64 = base64.b64encode(img['raw']).decode('utf-8')
                 prompt[0]["content"].append({
                     "type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
@@ -239,6 +249,64 @@ async def get_chat_completion_response(
     )
     return response.choices[0].message.content
 
+
+async def get_gemini_response(
+    messages: List[discord.Message],
+    model: str,
+    is_use_web_search: bool = False
+) -> str:
+    """Gemini APIのレスポンスを取得する"""
+    prompt = []
+    for msg in messages:
+        if msg.is_system():
+            continue
+        if msg.author.bot:
+            role = 'model'
+        else:
+            role = 'user'
+        
+        try:
+            content, img_content, pdf_content = await process_message_content(msg, is_img_input=True, is_pdf_input=True)
+        except Exception as e:
+            print(f"Error processing message content: {e}")
+            continue
+            
+        prompt.insert(0, {
+            "parts": [{"text": content}],
+            "role": role,
+        })
+        
+        for img in img_content:
+            prompt[0]["parts"].append(
+                types.Part.from_bytes(
+                    data=img['raw'],
+                    mime_type=f"image/{img['extension']}",
+                )
+            )
+        for pdf in pdf_content:
+            prompt[0]["parts"].append(
+                types.Part.from_bytes(
+                    data=pdf['raw'],
+                    mime_type="application/pdf",
+                )
+            )
+    
+    tools = []
+    if is_use_web_search:
+        tools.append(Tool(google_search=GoogleSearch()))
+    
+    response = clients['gemini'].models.generate_content(
+        model=model,
+        contents=prompt,
+        config=GenerateContentConfig(
+            system_instruction=SytemPrompts.prompts['assistant'],
+            tools=tools,
+            response_modalities=["TEXT"]
+        )
+    )
+    return response.text
+            
+
 async def get_openai_response(
     messages: List[discord.Message],
     model: str,
@@ -246,7 +314,7 @@ async def get_openai_response(
     is_use_web_search: bool = False,
     is_use_code_interpreter: bool = False,
     reasoning_effort: Optional[str] = None
-):
+) -> str:
     """OpenAI APIのレスポンスを取得する"""
     prompt = []
     for msg in messages:
@@ -260,7 +328,7 @@ async def get_openai_response(
             typ = 'input_text'
         
         try:
-            content, img_content, pdf_content = await process_message_content(msg, is_img_input)
+            content, img_content, pdf_content = await process_message_content(msg, is_img_input, is_pdf_input=True)
         except Exception as e:
             print(f"Error processing message content: {e}")
             continue
@@ -271,7 +339,8 @@ async def get_openai_response(
         })
 
         if is_img_input and role == 'user':
-            for img_base64 in img_content:
+            for img in img_content:
+                img_base64 = base64.b64encode(img['raw']).decode('utf-8')
                 prompt[0]["content"].append({
                     "type": "input_image",
                     "image_url": f"data:image/jpeg;base64,{img_base64}",
@@ -324,11 +393,10 @@ async def get_LLM_response(
         )
     
     if provider == 'gemini':
-        return await get_chat_completion_response(
+        return await get_gemini_response(
             messages,
             model=model,
-            is_img_input=is_img_input,
-            provider=provider
+            is_use_web_search=is_use_web_search
         )
     
     if provider != 'openai':
@@ -668,9 +736,8 @@ if __name__ == '__main__':
                'anthropic': openai.OpenAI(
                      api_key=os.getenv('ANTHROPIC_API_KEY'),
                      base_url="https://api.anthropic.com/v1/"),
-               'gemini': openai.OpenAI(
-                     api_key=os.getenv('GEMINI_API_KEY'),
-                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"),
+               'gemini': genai.Client(
+                     api_key=os.getenv('GEMINI_API_KEY')),
                'deepseek': openai.OpenAI(
                      api_key=os.getenv('DEEPSEEK_API_KEY'),
                      base_url="https://api.deepseek.com"),
