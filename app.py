@@ -295,16 +295,20 @@ async def get_gemini_response(
     if is_use_web_search:
         tools.append(Tool(google_search=GoogleSearch()))
     
-    response = clients['gemini'].models.generate_content(
-        model=model,
-        contents=prompt,
-        config=GenerateContentConfig(
-            system_instruction=SytemPrompts.prompts['assistant'],
-            tools=tools,
-            response_modalities=["TEXT"]
+    try:
+        response = clients['gemini'].models.generate_content(
+            model=model,
+            contents=prompt,
+            config=GenerateContentConfig(
+                system_instruction=SytemPrompts.prompts['assistant'],
+                tools=tools,
+                response_modalities=["TEXT"]
+            )
         )
-    )
-    return response.text
+        return response.text
+    except genai.errors.APIError as e:
+        response = f"ERROR: {e.code} {e.status} \n{e.message}"
+        return response
             
 
 async def get_openai_response(
