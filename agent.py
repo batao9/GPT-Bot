@@ -95,7 +95,10 @@ class Agent:
     def _initialize_llm(self) -> BaseChatModel:
         """LLMを初期化します。"""
         if self.provider == "openai":
-            return ChatOpenAI(model=self.model_name, reasoning_effort=self.reasoning_effort)
+            return ChatOpenAI(
+                model=self.model_name,
+                reasoning_effort=self.reasoning_effort,
+                use_responses_api=True)
         elif self.provider == "anthropic":
             return ChatAnthropic(model=self.model_name)
         elif self.provider == "google" or self.provider == "gemini":
@@ -118,13 +121,13 @@ class Agent:
 
     def invoke(
         self,
-        messages: List[Dict]
+        messages: List[BaseMessage]
     ) -> str:
         """
         エージェントを実行し、応答を返します。
 
         Args:
-            messages (List[Dict]): ユーザー入力とチャット履歴のリスト。
+            messages (List[BaseMessage]): ユーザー入力とチャット履歴のリスト。
 
         Returns:
             str: エージェントからの応答。
@@ -133,12 +136,10 @@ class Agent:
             print("E: Agent Executorが初期化されていません。")
             return "エラー: Agent Executorが初期化されていません。"
 
-        messages.insert(0, {"role": "system", "content": self.system_prompt})
-        print(messages)
         input_messages: List[BaseMessage] = trim_messages(
             messages,
             token_counter=len, # トークンカウンターとしてlen関数を使用
-            max_tokens=20, # 最大トークン数
+            max_tokens=20, # 会話ターン数
             include_system=True, # システムメッセージを含める
         )
         
@@ -149,7 +150,8 @@ class Agent:
                 {"messages": input_messages},
                 stream_mode="values"
             )
-            return response["messages"][-1].content
+            print(f"Response: {response['messages'][-1].text()}")
+            return response["messages"][-1].text()
         except Exception as e:
             print(f"エージェント実行中にエラーが発生しました: {e}")
             return f"処理中にエラーが発生しました。 ({type(e).__name__})"
