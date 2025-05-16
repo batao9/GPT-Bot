@@ -30,6 +30,7 @@ class Agent:
         system_prompt: Optional[str] = None,
         tools: Optional[List[str]] = None,
         reasoning_effort: Optional[str] = None,
+        debug: bool = False
     ):
         """
         エージェントを初期化します。
@@ -43,6 +44,7 @@ class Agent:
         """
         dotenv.load_dotenv()
 
+        self.debug = debug
         self.model_name = model_name
         self.provider = provider.lower()
         self.system_prompt = system_prompt or "あなたはAIアシスタントです。Python_Interpreterを使った場合はコードと結果を表示してください。"
@@ -119,7 +121,7 @@ class Agent:
         )
 
 
-    def invoke(
+    async def invoke(
         self,
         messages: List[BaseMessage]
     ) -> str:
@@ -143,22 +145,32 @@ class Agent:
             include_system=True, # システムメッセージを含める
         )
         
-        print(f"Input messages: {input_messages}")
+        if self.debug: print(f"Input messages: {input_messages}")
 
         try:
             response = self.agent_executor.invoke(
                 {"messages": input_messages},
                 stream_mode="values"
             )
-            print(f"Response: {response['messages'][-1].text()}")
+            if self.debug: print(f"Response: {response['messages'][-1].text()}")
             return response["messages"][-1].text()
         except Exception as e:
-            print(f"エージェント実行中にエラーが発生しました: {e}")
+            if self.debug: print(f"エージェント実行中にエラーが発生しました: {e}")
             return f"処理中にエラーが発生しました。 ({type(e).__name__})"
 
 
 if __name__ == "__main__":
     # テスト用のコード
-    agent = Agent(model_name="gpt-4o", provider="openai", tools=["ggl_web_search", "code_interpreter", "web_loader"])
-    response = agent.invoke([{"role": "user", "content": "0から1の間の乱数を生成して"}])
-    print(response)
+    import asyncio
+    from langchain_core.messages import HumanMessage
+
+    async def main():
+        agent = Agent(model_name="gpt-4o", provider="openai", tools=["ggl_web_search", "code_interpreter", "web_loader"], debug=True)
+        # invokeメソッドはBaseMessageのリストを期待するため、形式を修正
+        messages_input = [HumanMessage(content="0から1の間の乱数を生成して")]
+        # invokeメソッドはコルーチンなのでawaitで待機
+        response = await agent.invoke(messages_input)
+        print(response)
+
+    # async関数を実行
+    asyncio.run(main())
