@@ -1,7 +1,24 @@
-discord.py == 2.3.2
+# lang chain
+langchain-core
+langgraph == 0.2.28
+langchain-community
+langchain[openai]
+langchain[anthropic]
+langchain[google-genai]
+
+# tools
+langchain-google-community
+duckduckgo-search
+rizaio
+beautifulsoup4
+
+# dotenv
+python-dotenv
+
+# discord app
+discord.py
 openai
-python-dotenv == 1.0.1
-pymupdf4llm
+
+# utils
 SymPy
 charset-normalizer
-google-genai
