@@ -5,12 +5,16 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
 ## 実行前の準備
 1. .envファイルを作成しAPIキーを追記
     ```
-    TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX # discord API key
-    OPENAI_API_KEY=sk-XXXXXXXXXXXXXXXXXXX # open ai API key
-    GEMINI_API_KEY=XXXXXXXXXXXXXXXXXXXXXX # gemini API key
-    ANTHROPIC_API_KEY=sk-xxxxxxxxxxxxxxxx # claud API key
-    DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxx # deepseek API key
-    XAI_API_KEY=xai-xxxxxxxxxxxxxxxxxxxxx # gork API key
+    # discord API key
+    TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    # llm API keys
+    OPENAI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxx
+    GOOGLE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxx
+    ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxxx
+    # google search CSE ID
+    GOOGLE_CSE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxx # google search tool を使う場合
+    # Riza API key (Code Interpreter)
+    RIZA_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx # code interpreter を使う場合
     ```
 2. 必要なライブラリをインストール  
     ```
