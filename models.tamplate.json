@@ -1,19 +1,31 @@
 {
     "gpt-4o": { 
         "model": "gpt-4o", 
-        "web_search": true,
-        "img_input": true
+        "provider": "openai",
+        "tools": [
+            "ggl_search",
+            "code_interpreter",
+            "web_loader"
+        ]
     },
-    "o4-mini-high": {
-        "model": "o4-mini",
-        "reasoning_effort": "high",
-        "img_input": true
+    "gemini": {
+        "model": "gemini-2.5-pro-preview-05-06",
+        "provider": "gemini",
+        "tools": [
+            "ggl_search",
+            "code_interpreter",
+            "web_loader"
+        ]
     },
     "discord channel name": { 
         "model": "model name / required.",
-        "provider": "openai, anthropic, gemini, xai or deepseek / default is openai.",
-        "reasoning_effort": "low, medium or high / default is medium. OpenAI's o-series models only.",
-        "web_search": "true or false / default is false. openai model or gemini model.",
-        "img_input": "true or false / default is false."
+        "provider": "openai, anthropic or gemini, xai / required.",
+        "tools": [
+            "ggl_search / google search",
+            "ddg_search / duckduckgo search",
+            "code_interpreter / code interpreter",
+            "web_loader / web loader from url"
+        ],
+        "reasoning_effort": "low, medium or high / default is medium. OpenAI's o-series models only."
     }
 }
