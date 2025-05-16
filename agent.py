@@ -11,6 +11,7 @@ from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchRun
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_google_community import GoogleSearchAPIWrapper
 from langchain_community.tools.riza.command import ExecPython
+from langchain_community.document_loaders import WebBaseLoader
 # Agent
 from langchain_core.tools import Tool
 from langgraph.graph.graph import CompiledGraph
@@ -69,6 +70,19 @@ class Agent:
                             'You can use standard Python libraries. '+
                             'Results are displayed in the console, so use functions like print() to print the results.',
                         func=ExecPython().invoke
+                    )
+                )
+            if 'web_loader' in tools:
+                def web_loader_func(url: str) -> str:
+                    loader = WebBaseLoader(url)
+                    return loader.load()
+                self.tools.append(
+                    Tool(
+                        name="Web_Loader",
+                        description='Web Loader: '+
+                            'Use this tool to load web pages. '+
+                            'Input must be a valid URL.',
+                        func=web_loader_func
                     )
                 )
         if self.provider == "openai":
@@ -143,6 +157,6 @@ class Agent:
 
 if __name__ == "__main__":
     # テスト用のコード
-    agent = Agent(model_name="gpt-4o", provider="openai", tools=["ggl_web_search", "code_interpreter"])
+    agent = Agent(model_name="gpt-4o", provider="openai", tools=["ggl_web_search", "code_interpreter", "web_loader"])
     response = agent.invoke([{"role": "user", "content": "0から1の間の乱数を生成して"}])
     print(response)
