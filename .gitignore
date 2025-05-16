@@ -1,7 +1,67 @@
-old/
-__pycache__/
-build/
-dist/
-*.env
-*.spec
+# --- ユーザー定義フォルダ・ファイル ---
+tmp/
+
+# モデル設定ファイル
 models.json
+
+# --- Python関連 ---
+# Pythonバイトコードキャッシュ
+__pycache__/
+# コンパイル済みPythonファイル
+*.pyc
+# Python仮想環境
+.venv/
+venv/
+env/
+# Pythonパッケージ情報 (egg)
+*.egg-info/
+# Python Wheels
+*.whl
+
+# --- ビルド・配布関連 ---
+# ビルド成果物
+build/
+# 配布用パッケージ
+dist/
+# PyInstallerなどのスペックファイル
+*.spec
+
+# --- テスト・リンター・カバレッジ関連 ---
+# pytestキャッシュ
+.pytest_cache/
+# mypyキャッシュ
+.mypy_cache/
+# coverageレポート
+.coverage
+coverage.xml
+htmlcov/
+# tox環境
+.tox/
+
+# --- 環境設定・機密情報 ---
+*.env
+.env.*
+
+# --- ログファイル ---
+*.log
+logs/
+
+# --- IDE・エディタ設定ファイル ---
+# VSCode
+.vscode/
+# PyCharm / IntelliJ
+.idea/
+# Vim
+*.swp
+*~
+# Emacs
+*#
+# macOS
+.DS_Store
+
+# --- その他 ---
+# Jupyter Notebook チェックポイント
+.ipynb_checkpoints/
+# OS固有ファイル
+Thumbs.db
+ehthumbs.db
