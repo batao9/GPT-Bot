@@ -70,7 +70,8 @@ class Agent:
                             'Use this tool when you need to run Python code to get an answer. '+
                             'Input must be a valid Python expression or statement. '+
                             'You can use standard Python libraries. '+
-                            'Results are displayed in the console, so use functions like print() to print the results.',
+                            'Results are displayed in the console, so use functions like print() to print the results. '+
+                            'It is not possible to output graph images, so please use it for simple processing that can be completed in just a few lines.',
                         func=ExecPython().invoke
                     )
                 )
