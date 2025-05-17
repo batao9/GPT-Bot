@@ -182,7 +182,7 @@ class MyClient(discord.Client):
         if len(messages) != 1:
             return None
 
-        llm = init_chat_model("gpt-4.1-nano", model_provider="openai", use_responses_api=True)
+        llm = init_chat_model("gpt-4.1-nano", model_provider="openai", use_responses_api=True, store=False)
         structured_llm = llm.with_structured_output(ThreadName)
 
         converted_messages = await self.convert_message(

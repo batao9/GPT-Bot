@@ -100,7 +100,8 @@ class Agent:
             return ChatOpenAI(
                 model=self.model_name,
                 reasoning_effort=self.reasoning_effort,
-                use_responses_api=True)
+                use_responses_api=True,
+                store=False)
         elif self.provider == "anthropic":
             return ChatAnthropic(model=self.model_name)
         elif self.provider == "google" or self.provider == "gemini":
