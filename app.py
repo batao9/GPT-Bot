@@ -26,17 +26,18 @@ from prompts import SytemPrompts
 
 class Utils:
     @staticmethod
-    def latex_to_image(latex_code: str, save_path: str = None) -> str:
+    def latex_to_image(latex_code: str, prefix: str = '_latex_formula_', save_path: str = None) -> str:
         """LaTeXコードを画像に変換する。
 
         Args:
             latex_code (str): 変換するLaTeXコード。
+            prefix (str, optional): 一時ファイル名のプレフィックス。Defaults to '_latex_formula_'.
             save_path (str, optional): 画像を保存するパス。指定しない場合は一時ファイルに保存。Defaults to None.
 
         Returns:
             str: 保存された画像ファイルのパス。
         """
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+        with tempfile.NamedTemporaryFile(prefix=prefix, suffix=".png", delete=False) as tmpfile:
             sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
                         dvioptions=["-T", "tight", "-z", "0", "--truecolor", "-D 600"],
                         dpi=60)
