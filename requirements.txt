@@ -11,6 +11,8 @@ langchain-google-community
 duckduckgo-search
 rizaio
 beautifulsoup4
+langchain-mcp-adapters
+PyMuPDF
 
 # dotenv
 python-dotenv
