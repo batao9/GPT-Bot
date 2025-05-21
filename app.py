@@ -152,7 +152,7 @@ class MyClient(discord.Client):
         ):
             return
 
-        llm_agent = Agent(
+        llm_agent: Agent = await Agent.create(
             model_name=Models.get_field(message.channel, "model"),
             provider=Models.get_field(message.channel, "provider"),
             tools=Models.get_field(message.channel, "tools"),
@@ -169,14 +169,16 @@ class MyClient(discord.Client):
         )
         response_future = llm_agent.invoke(messages = converted_messages)
 
-        thread_name, response = await asyncio.gather(
+        gathered_results = await asyncio.gather(
             thread_name_future,
             response_future
         )
+        thread_name = gathered_results[0]
+        response, attachments = gathered_results[1]
 
         if thread and thread_name:
             await thread.edit(name=thread_name)
-        await self.send_response(thread, response)
+        await self.send_response(thread, response, attachments)
 
 
     async def get_thread_and_messages(
@@ -332,9 +334,13 @@ class MyClient(discord.Client):
             if not msg.author.bot:
                 converted_messages.append(HumanMessage(contents + attachments))
             if msg.author.bot:
-                converted_messages.append(AIMessage(contents))
-                # botが画像を送信した場合の処理を追加予定
-                # code interpreterの結果を画像で送信する場合など
+                if provider == "gemini":
+                    # geminiはmodelが画像を送信することも想定している
+                    converted_messages.append(AIMessage(contents + attachments))
+                else:
+                    converted_messages.append(AIMessage(contents))
+                    # ほかのproviderでもbotが画像を送信した場合の処理を追加予定
+                    # code interpreterの結果を画像で送信する場合など
                     
 
         # システムプロンプトの追加
@@ -347,7 +353,8 @@ class MyClient(discord.Client):
     async def send_response(
         self,
         thread: discord.TextChannel,
-        response: str
+        response: str,
+        attachments: List[str] = []
     ) -> None:
         """レスポンスを指定されたスレッドに送信する。
 
@@ -356,6 +363,7 @@ class MyClient(discord.Client):
         Args:
             thread (discord.TextChannel): レスポンスを送信するスレッドまたはテキストチャンネル。
             response (str): 送信するレスポンス文字列。
+            attachments (List[str], optional): 添付ファイルのパスのリスト。Defaults to [].
         """
         print(f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
@@ -382,7 +390,8 @@ class MyClient(discord.Client):
                 except Exception as e:
                     print(f'latex_to_image error: {e}')
                     if len(buff) + len(latex_code) > MAX_LENGTH:
-                        await thread.send(buff)
+                        if buff.strip():
+                            await thread.send(buff)
                         buff = ''
                     buff += part
             else:
@@ -391,9 +400,23 @@ class MyClient(discord.Client):
                     buff = ''
                 buff += part
 
-        # 残りを送信
-        if buff.strip():
-            await thread.send(buff)
+        # 残りのバッファ内容と、引数で渡された添付ファイルを送信
+        if buff.strip() or attachments:
+            files_to_send = []
+            if attachments:
+                for file_path in attachments:
+                    files_to_send.append(discord.File(file_path))
+            
+            content_to_send = buff if buff.strip() else None
+            await thread.send(content=content_to_send, files=files_to_send)
+
+            # 送信後に添付ファイルを削除
+            if attachments:
+                for file_path in attachments:
+                    try:
+                        os.remove(file_path)
+                    except OSError as e:
+                        print(f"Error deleting attachment file {file_path}: {e}")
 
 
     def split_response(
