@@ -14,6 +14,8 @@ import dotenv
 import base64
 import aiohttp
 # utils
+import httpx
+import fitz
 import tempfile
 import re
 import sympy
@@ -26,12 +28,12 @@ from prompts import SytemPrompts
 
 class Utils:
     @staticmethod
-    def latex_to_image(latex_code: str, prefix: str = '_latex_formula_', save_path: str = None) -> str:
+    def latex_to_image(latex_code: str, prefix: str = 'latex_formula_', save_path: str = None) -> str:
         """LaTeXコードを画像に変換する。
 
         Args:
             latex_code (str): 変換するLaTeXコード。
-            prefix (str, optional): 一時ファイル名のプレフィックス。Defaults to '_latex_formula_'.
+            prefix (str, optional): 一時ファイル名のプレフィックス。Defaults to 'latex_formula_'.
             save_path (str, optional): 画像を保存するパス。指定しない場合は一時ファイルに保存。Defaults to None.
 
         Returns:
@@ -88,6 +90,46 @@ class Utils:
             return enc
         return 'utf-8'
 
+    @staticmethod
+    def pdf_url_to_base64_images(pdf_url: str) -> list[str]:
+        """URLからPDFを取得し、1ページずつ画像に変換する。
+        
+        URLからPDFを取得し、1ページずつ画像に変換し、base64エンコードし、
+        最終的にbase64エンコードされたPDFの画像の文字列のリストを返す。
+
+        Args:
+            pdf_url (str): PDFのURL。
+
+        Returns:
+            list[str]: 各ページをbase64エンコードした画像データの文字列のリスト。
+                    エラーが発生した場合は空のリストを返します。
+        """
+        base64_images = []
+        try:
+            response = httpx.get(pdf_url)
+            response.raise_for_status()  # HTTPエラーの場合は例外を発生させる
+            pdf_bytes = response.content
+
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                pix = page.get_pixmap()  # デフォルトDPI (96) で画像を取得
+                img_bytes = pix.tobytes("png")  # PNG形式で画像のバイト列を取得
+
+                base64_encoded_image = base64.b64encode(img_bytes).decode('utf-8')
+                base64_images.append(base64_encoded_image)
+
+            doc.close()
+        except httpx.HTTPStatusError as e:
+            print(f"URLからのPDF取得中にHTTPエラーが発生しました ({pdf_url}): {e}")
+            return []
+        except Exception as e:
+            print(f"PDF処理中にエラーが発生しました ({pdf_url}): {e}")
+            return []
+        
+        return base64_images
+
 
 class MyClient(discord.Client):
     async def on_ready(self) -> None:
@@ -110,7 +152,7 @@ class MyClient(discord.Client):
         ):
             return
 
-        llm_agent = Agent(
+        llm_agent: Agent = await Agent.create(
             model_name=Models.get_field(message.channel, "model"),
             provider=Models.get_field(message.channel, "provider"),
             tools=Models.get_field(message.channel, "tools"),
@@ -127,14 +169,16 @@ class MyClient(discord.Client):
         )
         response_future = llm_agent.invoke(messages = converted_messages)
 
-        thread_name, response = await asyncio.gather(
+        gathered_results = await asyncio.gather(
             thread_name_future,
             response_future
         )
+        thread_name = gathered_results[0]
+        response, attachments = gathered_results[1]
 
         if thread and thread_name:
             await thread.edit(name=thread_name)
-        await self.send_response(thread, response)
+        await self.send_response(thread, response, attachments)
 
 
     async def get_thread_and_messages(
@@ -218,13 +262,15 @@ class MyClient(discord.Client):
             if msg.is_system():
                 continue
 
-            if msg.author.bot:
+            if msg.author.bot and not msg.attachments:
                 converted_messages.append(AIMessage(content=msg.content))
                 continue
 
-            contents = []
             # 添付ファイルの処理
             msg_content = msg.content
+            contents = []
+            attachments = []
+            contents.append({"type": "text", "text": msg_content})
             if msg.attachments:
                 for attachment in msg.attachments:
                     filename = attachment.filename
@@ -234,16 +280,17 @@ class MyClient(discord.Client):
                                 continue
                             raw = await resp.read()
                             # pdf file
-                            if filename.endswith('.pdf'):
+                            if filename.endswith('.pdf') and not msg.author.bot:
                                 pdf_base64 = base64.b64encode(raw).decode('utf-8')
                                 if provider == "openai":
-                                    contents.append({
-                                        "type": "input_file",
-                                        "filename": filename,
-                                        "file_data": f"data:application/pdf;base64,{pdf_base64}",
-                                    })
+                                    imgs_base64 = Utils.pdf_url_to_base64_images(attachment.url)
+                                    for img in imgs_base64:
+                                        attachments.append({
+                                            "type": "image_url",
+                                            "image_url": {"url": f"data:image/png;base64,{img}"},
+                                        })
                                 elif provider == "anthropic" or "gemini":
-                                    contents.append({
+                                    attachments.append({
                                         "type": "file",
                                         "source_type": "base64",
                                         "mime_type": "application/pdf",
@@ -251,9 +298,11 @@ class MyClient(discord.Client):
                                     })
                             # image file
                             elif filename.endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
+                                if filename.startswith('latex_formula_'):
+                                    continue
                                 img_base64 = base64.b64encode(raw).decode('utf-8')
                                 extension = filename.split('.')[-1]
-                                contents.append({
+                                attachments.append({
                                     "type": "image_url",
                                     "image_url": {"url": f"data:image/{extension};base64,{img_base64}"},
                                 })
@@ -282,8 +331,17 @@ class MyClient(discord.Client):
                                     "__file_end__"
                                 )
             # メッセージの変換
-            contents.append({"type": "text", "text": msg_content})
-            converted_messages.append(HumanMessage(contents))
+            if not msg.author.bot:
+                converted_messages.append(HumanMessage(contents + attachments))
+            if msg.author.bot:
+                if provider == "gemini":
+                    # geminiはmodelが画像を送信することも想定している
+                    converted_messages.append(AIMessage(contents + attachments))
+                else:
+                    converted_messages.append(AIMessage(contents))
+                    # ほかのproviderでもbotが画像を送信した場合の処理を追加予定
+                    # code interpreterの結果を画像で送信する場合など
+                    
 
         # システムプロンプトの追加
         if system_prompt:
@@ -295,7 +353,8 @@ class MyClient(discord.Client):
     async def send_response(
         self,
         thread: discord.TextChannel,
-        response: str
+        response: str,
+        attachments: List[str] = []
     ) -> None:
         """レスポンスを指定されたスレッドに送信する。
 
@@ -304,6 +363,7 @@ class MyClient(discord.Client):
         Args:
             thread (discord.TextChannel): レスポンスを送信するスレッドまたはテキストチャンネル。
             response (str): 送信するレスポンス文字列。
+            attachments (List[str], optional): 添付ファイルのパスのリスト。Defaults to [].
         """
         print(f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
@@ -330,7 +390,8 @@ class MyClient(discord.Client):
                 except Exception as e:
                     print(f'latex_to_image error: {e}')
                     if len(buff) + len(latex_code) > MAX_LENGTH:
-                        await thread.send(buff)
+                        if buff.strip():
+                            await thread.send(buff)
                         buff = ''
                     buff += part
             else:
@@ -339,9 +400,23 @@ class MyClient(discord.Client):
                     buff = ''
                 buff += part
 
-        # 残りを送信
-        if buff.strip():
-            await thread.send(buff)
+        # 残りのバッファ内容と、引数で渡された添付ファイルを送信
+        if buff.strip() or attachments:
+            files_to_send = []
+            if attachments:
+                for file_path in attachments:
+                    files_to_send.append(discord.File(file_path))
+            
+            content_to_send = buff if buff.strip() else None
+            await thread.send(content=content_to_send, files=files_to_send)
+
+            # 送信後に添付ファイルを削除
+            if attachments:
+                for file_path in attachments:
+                    try:
+                        os.remove(file_path)
+                    except OSError as e:
+                        print(f"Error deleting attachment file {file_path}: {e}")
 
 
     def split_response(

@@ -1,6 +1,6 @@
 # lang chain
 langchain-core
-langgraph == 0.2.28
+langgraph
 langchain-community
 langchain[openai]
 langchain[anthropic]
@@ -11,6 +11,8 @@ langchain-google-community
 duckduckgo-search
 rizaio
 beautifulsoup4
+langchain-mcp-adapters
+PyMuPDF
 
 # dotenv
 python-dotenv

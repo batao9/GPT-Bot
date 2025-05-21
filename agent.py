@@ -18,10 +18,46 @@ from langgraph.graph.graph import CompiledGraph
 from langgraph.prebuilt import create_react_agent
 
 import dotenv
-from typing import Optional, List, Dict
+import json
+import os
+from typing import Optional, List, Dict, Any, Tuple
+from pydantic import BaseModel, Field
+
+class AgentResponse(BaseModel):
+    """エージェントの応答形式モデル。"""
+    response: str = Field(description="Agent's response.")
+    attachments: List[str] = Field(
+        description="Filenames to attach to the response. "+
+                    "Treated as DOWNLOAD_DIR/<filename>."
+    )
 
 class Agent:
     """Langchainを使用したAIエージェントクラス。"""
+    @classmethod
+    async def create(
+        cls,
+        model_name: str,
+        provider: str = "openai",
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[str]] = None,
+        reasoning_effort: Optional[str] = None,
+        debug: bool = False
+    ):
+        """
+        エージェントを非同期に初期化します。
+
+        Args:
+            model_name (str): 使用するモデル名。
+            provider (str): LLMプロバイダー ("openai", "anthropic", "google")。
+            system_prompt (Optional[str]): システムプロンプト。
+            tools (Optional[List[str]]): 使用するツールのリスト (例: ["ggl_search"])。
+            reasoning_effort (Optional[str]): (OpenAIのみ) 推論の取り組み度合い。
+            debug (bool): デバッグモード。
+        """
+        instance = cls(model_name, provider, system_prompt, tools, reasoning_effort, debug, _create_mode=True)
+        # mcpツールを非同期に初期化
+        await instance._async_init_components(tools_arg_for_async=tools)
+        return instance
 
     def __init__(
         self,
@@ -30,7 +66,8 @@ class Agent:
         system_prompt: Optional[str] = None,
         tools: Optional[List[str]] = None,
         reasoning_effort: Optional[str] = None,
-        debug: bool = False
+        debug: bool = False,
+        _create_mode: bool = False
     ):
         """
         エージェントを初期化します。
@@ -41,13 +78,19 @@ class Agent:
             system_prompt (Optional[str]): システムプロンプト。
             tools (Optional[List[str]]): 使用するツールのリスト (例: ["ggl_search"])。
             reasoning_effort (Optional[str]): (OpenAIのみ) 推論の取り組み度合い。
+            debug (bool): デバッグモード。
+            _create_mode (bool): インスタンス作成モード。
         """
+        
+        if not _create_mode:
+            raise TypeError("Agentインスタンスは Agent.create() 非同期クラスメソッドを使用して作成する必要があります。")
+        
         dotenv.load_dotenv()
 
         self.debug = debug
         self.model_name = model_name
         self.provider = provider.lower()
-        self.system_prompt = system_prompt or "あなたはAIアシスタントです。Python_Interpreterを使った場合はコードと結果を表示してください。"
+        self.system_prompt = system_prompt or "あなたはAIアシスタントです。"
         self.tools = []
         if tools:
             if 'ddg_search' in tools:
@@ -76,7 +119,7 @@ class Agent:
                     )
                 )
             if 'web_loader' in tools:
-                def web_loader_func(url: str) -> str:
+                def web_loader_func(url: str) -> List[Any]:
                     loader = WebBaseLoader(url)
                     return loader.load()
                 self.tools.append(
@@ -92,7 +135,37 @@ class Agent:
             self.reasoning_effort = reasoning_effort
 
         self.llm: BaseChatModel = self._initialize_llm()
-        self.agent_executor: CompiledGraph = self._initialize_agent_executor()
+        self.agent_executor: Optional[CompiledGraph] = None
+
+
+    async def _async_init_components(self, tools_arg_for_async: Optional[List[str]] = None):
+        """
+        非同期で初期化が必要なコンポーネント（MCPツールなど）をセットアップし、
+        エージェントエクゼキュータを初期化します。
+        
+        Args:
+            tools_arg_for_async (Optional[List[str]]): 非同期で初期化が必要なツールのリスト。
+        """
+        if tools_arg_for_async and 'mcp' in tools_arg_for_async:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+            config_file = os.getenv("MCP_CONFIG_FILE") or "mcp.json"
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                if 'mcpServers' in config:
+                    mcp_client = MultiServerMCPClient(config['mcpServers'])
+                    mcp_tools_list = await mcp_client.get_tools()
+                    self.tools.extend(mcp_tools_list)
+                else:
+                    print(f"警告: MCP設定ファイル '{config_file}' に 'mcpServers' キーが見つかりません。")
+            except FileNotFoundError:
+                print(f"警告: MCP設定ファイル '{config_file}' が見つかりません。")
+            except json.JSONDecodeError:
+                print(f"警告: MCP設定ファイル '{config_file}' のJSONデコードに失敗しました。")
+            except Exception as e:
+                print(f"警告: MCPツールの初期化中にエラーが発生しました: {e}")
+
+        self.agent_executor = self._initialize_agent_executor()
 
 
     def _initialize_llm(self) -> BaseChatModel:
@@ -101,7 +174,6 @@ class Agent:
             return ChatOpenAI(
                 model=self.model_name,
                 reasoning_effort=self.reasoning_effort,
-                use_responses_api=True,
                 store=False)
         elif self.provider == "anthropic":
             return ChatAnthropic(model=self.model_name)
@@ -119,14 +191,15 @@ class Agent:
 
         return create_react_agent(
             model=self.llm,
-            tools=self.tools
+            tools=self.tools,
+            response_format=AgentResponse
         )
 
 
     async def invoke(
         self,
         messages: List[BaseMessage]
-    ) -> str:
+    ) -> Tuple[str, List[str]]:
         """
         エージェントを実行し、応答を返します。
 
@@ -134,7 +207,7 @@ class Agent:
             messages (List[BaseMessage]): ユーザー入力とチャット履歴のリスト。
 
         Returns:
-            str: エージェントからの応答。
+            Tuple[str, List[str]]: エージェントからの応答と添付ファイルのパスのリスト。
         """
         if not self.agent_executor:
             print("E: Agent Executorが初期化されていません。")
@@ -150,12 +223,38 @@ class Agent:
         if self.debug: print(f"Input messages: {input_messages}")
 
         try:
-            response = self.agent_executor.invoke(
-                {"messages": input_messages},
-                stream_mode="values"
+            response = await self.agent_executor.ainvoke(
+                {"messages": input_messages}
             )
             if self.debug: print(f"Response: {response['messages'][-1].text()}")
-            return response["messages"][-1].text()
+
+            agent_response_obj = response["structured_response"]
+            response_text = agent_response_obj.response
+            requested_attachments = agent_response_obj.attachments
+
+            if not requested_attachments:
+                return response_text, []
+
+            attachments_base_dir = os.getenv("AGENT_ATTACHMENTS_DIR")
+            if not attachments_base_dir:
+                if self.debug:
+                    print(f"W: 環境変数 AGENT_ATTACHMENTS_DIR が設定されていません。添付ファイルのパスを検証できません。")
+                return response_text, []
+
+            # 添付ファイルが存在するか検証
+            verified_attachments = []
+            for filename in requested_attachments:
+                if not isinstance(filename, str) or not filename.strip():
+                    if self.debug:
+                        print(f"W: 添付ファイルリストに無効なファイル名が含まれています: {filename}")
+                    continue
+                file_path = os.path.join(attachments_base_dir, filename)
+                if os.path.exists(file_path) and os.path.isfile(file_path):
+                    verified_attachments.append(file_path)
+                elif self.debug:
+                    print(f"W: 添付ファイル '{filename}' が指定されたパス '{file_path}' に見つからないか、通常のファイルではありません。")
+            return response_text, verified_attachments
+        
         except Exception as e:
             if self.debug: print(f"エージェント実行中にエラーが発生しました: {e}")
             return f"処理中にエラーが発生しました。 ({type(e).__name__})"
@@ -165,14 +264,21 @@ if __name__ == "__main__":
     # テスト用のコード
     import asyncio
     from langchain_core.messages import HumanMessage
+    from prompts import SytemPrompts
 
     async def main():
-        agent = Agent(model_name="gpt-4o", provider="openai", tools=["ggl_web_search", "code_interpreter", "web_loader"], debug=True)
-        # invokeメソッドはBaseMessageのリストを期待するため、形式を修正
-        messages_input = [HumanMessage(content="0から1の間の乱数を生成して")]
+        agent = await Agent.create(
+            model_name="o4-mini", 
+            provider="openai", 
+            tools=["ggl_web_search", "web_loader", "mcp"], 
+            system_prompt=SytemPrompts.prompts["assistant"],
+            debug=True
+        )
+        messages_input = [HumanMessage(content="pythonで y = x^2 のグラフを描いて")]
         # invokeメソッドはコルーチンなのでawaitで待機
-        response = await agent.invoke(messages_input)
+        response, attachments = await agent.invoke(messages_input)
         print(response)
+        print(attachments)
 
     # async関数を実行
     asyncio.run(main())
