@@ -211,7 +211,7 @@ class Agent:
         """
         if not self.agent_executor:
             print("E: Agent Executorが初期化されていません。")
-            return "エラー: Agent Executorが初期化されていません。"
+            return "エラー: Agent Executorが初期化されていません。", []
 
         input_messages: List[BaseMessage] = trim_messages(
             messages,
@@ -257,7 +257,7 @@ class Agent:
         
         except Exception as e:
             if self.debug: print(f"エージェント実行中にエラーが発生しました: {e}")
-            return f"処理中にエラーが発生しました。 ({type(e).__name__})"
+            return f"処理中にエラーが発生しました。 ({type(e).__name__})", []
 
 
 if __name__ == "__main__":
