@@ -20,14 +20,14 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     USER_ATTACHMENTS_DIR='/path/to/user_attach'     # userが送信したファイルのパス
     AGENT_ATTACHMENTS_DIR='/path/to/agent_attach'   # agentが送信するファイルのパス
     ```
-2. 必要なライブラリをインストール  
-    ```
-    pip install -r requirements.txt
-    ```
-3. 数式を画像に変換する機能を使用する場合はlatexをインストール
+2. 数式を画像に変換する機能を使用する場合はlatexをインストール
     ```
     sudo apt update
     sudo apt install texlive texlive-latex-extra dvipng
+    ```
+3. 実行
+    ```
+    uv run python app.py
     ```
 ## 使用方法
 ### models.jsonの設定
