@@ -17,7 +17,8 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     RIZA_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx # code interpreter を使う場合
 
     # agent attachment files
-    AGENT_ATTACHMENTS_DIR='/path/to/tmp/dir' # agentが送信するファイルのパス
+    USER_ATTACHMENTS_DIR='/path/to/user_attach'     # userが送信したファイルのパス
+    AGENT_ATTACHMENTS_DIR='/path/to/agent_attach'   # agentが送信するファイルのパス
     ```
 2. 必要なライブラリをインストール  
     ```

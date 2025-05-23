@@ -7,11 +7,14 @@ from langchain_openai.chat_models import ChatOpenAI
 from langchain_anthropic.chat_models import ChatAnthropic
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAI
 # Tools
-from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchRun
-from langchain_community.tools import DuckDuckGoSearchResults
-from langchain_google_community import GoogleSearchAPIWrapper
-from langchain_community.tools.riza.command import ExecPython
-from langchain_community.document_loaders import WebBaseLoader
+from tools import (
+    get_google_search_tool,
+    get_duckduckgo_search_tools,
+    get_code_interpreter_tool,
+    get_web_loader_tool,
+    get_docx_loader_tool,
+    get_text_file_loader_tool
+)
 # Agent
 from langchain_core.tools import Tool
 from langgraph.graph.graph import CompiledGraph
@@ -91,46 +94,7 @@ class Agent:
         self.model_name = model_name
         self.provider = provider.lower()
         self.system_prompt = system_prompt or "あなたはAIアシスタントです。"
-        self.tools = []
-        if tools:
-            if 'ddg_search' in tools:
-                self.tools.append(DuckDuckGoSearchRun())
-                self.tools.append(DuckDuckGoSearchResults())
-            if 'ggl_search' in tools:
-                search = GoogleSearchAPIWrapper()
-                self.tools.append(
-                    Tool(
-                        name="Google_Search",
-                        description='Googleで情報を検索します。引数は検索クエリです。',
-                        func=search.run
-                    )
-                )
-            if 'code_interpreter' in tools:
-                self.tools.append(
-                    Tool(
-                        name="Python_Interpreter",
-                        description='Run Python Code: '+
-                            'Use this tool when you need to run Python code to get an answer. '+
-                            'Input must be a valid Python expression or statement. '+
-                            'You can use standard Python libraries. '+
-                            'Results are displayed in the console, so use functions like print() to print the results. '+
-                            'It is not possible to output graph images, so please use it for simple processing that can be completed in just a few lines.',
-                        func=ExecPython().invoke
-                    )
-                )
-            if 'web_loader' in tools:
-                def web_loader_func(url: str) -> List[Any]:
-                    loader = WebBaseLoader(url)
-                    return loader.load()
-                self.tools.append(
-                    Tool(
-                        name="Web_Loader",
-                        description='Web Loader: '+
-                            'Use this tool to load web pages. '+
-                            'Input must be a valid URL.',
-                        func=web_loader_func
-                    )
-                )
+        self.tools = self._initialize_tools(tools)
         if self.provider == "openai":
             self.reasoning_effort = reasoning_effort
 
@@ -194,6 +158,32 @@ class Agent:
             tools=self.tools,
             response_format=AgentResponse
         )
+    
+    
+    def _initialize_tools(self, tools: Optional[List[str]] = None) -> List[Tool]:
+        """
+        ツールを初期化します。
+
+        Args:
+            tools (Optional[List[str]]): 使用するツールのリスト (例: ["ggl_search"])。
+
+        Returns:
+            List[Tool]: 初期化されたツールのリスト。
+        """
+        download_dir = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
+        tools_list = [
+            get_docx_loader_tool(download_dir),
+            get_text_file_loader_tool(download_dir)
+        ]
+        if 'ggl_search' in tools:
+            tools_list.append(get_google_search_tool())
+        if 'ddg_search' in tools:
+            tools_list.extend(get_duckduckgo_search_tools())
+        if 'code_interpreter' in tools:
+            tools_list.append(get_code_interpreter_tool())
+        if 'web_loader' in tools:
+            tools_list.append(get_web_loader_tool())
+        return tools_list
 
 
     async def invoke(
@@ -235,11 +225,7 @@ class Agent:
             if not requested_attachments:
                 return response_text, []
 
-            attachments_base_dir = os.getenv("AGENT_ATTACHMENTS_DIR")
-            if not attachments_base_dir:
-                if self.debug:
-                    print(f"W: 環境変数 AGENT_ATTACHMENTS_DIR が設定されていません。添付ファイルのパスを検証できません。")
-                return response_text, []
+            attachments_base_dir = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
 
             # 添付ファイルが存在するか検証
             verified_attachments = []

@@ -13,6 +13,7 @@ rizaio
 beautifulsoup4
 langchain-mcp-adapters
 PyMuPDF
+docx2txt
 
 # dotenv
 python-dotenv

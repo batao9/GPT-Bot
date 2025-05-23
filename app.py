@@ -14,121 +14,13 @@ import dotenv
 import base64
 import aiohttp
 # utils
-import httpx
-import fitz
-import tempfile
 import re
 import sympy
-import charset_normalizer
 import asyncio
 from typing import Optional, List, Dict, Tuple
 from LLM_Models import Models
 from prompts import SytemPrompts
-
-
-class Utils:
-    @staticmethod
-    def latex_to_image(latex_code: str, prefix: str = 'latex_formula_', save_path: str = None) -> str:
-        """LaTeXコードを画像に変換する。
-
-        Args:
-            latex_code (str): 変換するLaTeXコード。
-            prefix (str, optional): 一時ファイル名のプレフィックス。Defaults to 'latex_formula_'.
-            save_path (str, optional): 画像を保存するパス。指定しない場合は一時ファイルに保存。Defaults to None.
-
-        Returns:
-            str: 保存された画像ファイルのパス。
-        """
-        with tempfile.NamedTemporaryFile(prefix=prefix, suffix=".png", delete=False) as tmpfile:
-            sympy.preview(latex_code, viewer='file', filename=tmpfile.name, euler=False,
-                        dvioptions=["-T", "tight", "-z", "0", "--truecolor", "-D 600"],
-                        dpi=60)
-            if save_path:
-                os.rename(tmpfile.name, save_path)
-                return save_path
-            else:
-                return tmpfile.name
-
-    @staticmethod
-    def is_probably_text(raw: bytes, threshold: float = 0.75) -> bool:
-        """バイト列がテキストである可能性が高いか判定する。
-
-        1. NULL バイトがあれば False を返す。
-        2. charset_normalizer でベストマッチを取得する。
-        3. language_confidence（言語推定の信頼度）が閾値以上なら True を返す。
-
-        Args:
-            raw (bytes): 判定するバイト列。
-            threshold (float, optional): テキストと判定するための信頼度の閾値。Defaults to 0.75.
-
-        Returns:
-            bool: テキストである可能性が高い場合は True、そうでない場合は False。
-        """
-        if b'\x00' in raw:
-            return False
-        match = charset_normalizer.detect(raw)
-        if not match:
-            return False
-        return match['confidence'] >= threshold
-
-    @staticmethod
-    def detect_encoding(raw: bytes) -> str:
-        """バイト列のエンコーディングを推定する。
-
-        charset-normalizer でエンコーディングを推定する。
-        見つからなければ UTF‑8 を返す。
-
-        Args:
-            raw (bytes): エンコーディングを推定するバイト列。
-
-        Returns:
-            str: 推定されたエンコーディング名。
-        """
-        best = charset_normalizer.from_bytes(raw).best()
-        if best and best.encoding:
-            enc = best.encoding.replace('_', '-').lower()
-            return enc
-        return 'utf-8'
-
-    @staticmethod
-    def pdf_url_to_base64_images(pdf_url: str) -> list[str]:
-        """URLからPDFを取得し、1ページずつ画像に変換する。
-        
-        URLからPDFを取得し、1ページずつ画像に変換し、base64エンコードし、
-        最終的にbase64エンコードされたPDFの画像の文字列のリストを返す。
-
-        Args:
-            pdf_url (str): PDFのURL。
-
-        Returns:
-            list[str]: 各ページをbase64エンコードした画像データの文字列のリスト。
-                    エラーが発生した場合は空のリストを返します。
-        """
-        base64_images = []
-        try:
-            response = httpx.get(pdf_url)
-            response.raise_for_status()  # HTTPエラーの場合は例外を発生させる
-            pdf_bytes = response.content
-
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                pix = page.get_pixmap()  # デフォルトDPI (96) で画像を取得
-                img_bytes = pix.tobytes("png")  # PNG形式で画像のバイト列を取得
-
-                base64_encoded_image = base64.b64encode(img_bytes).decode('utf-8')
-                base64_images.append(base64_encoded_image)
-
-            doc.close()
-        except httpx.HTTPStatusError as e:
-            print(f"URLからのPDF取得中にHTTPエラーが発生しました ({pdf_url}): {e}")
-            return []
-        except Exception as e:
-            print(f"PDF処理中にエラーが発生しました ({pdf_url}): {e}")
-            return []
-        
-        return base64_images
+from utils import Utils
 
 
 class MyClient(discord.Client):
@@ -258,7 +150,10 @@ class MyClient(discord.Client):
             List[BaseMessage]: 変換されたメッセージのリスト。
         """
         converted_messages = []
-        for msg in reversed(messages):
+        download_dir = os.getenv('USER_ATTACHMENTS_DIR') or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
+        os.makedirs(download_dir, exist_ok=True)
+        
+        for msg_idx, msg in enumerate(reversed(messages)):
             if msg.is_system():
                 continue
 
@@ -269,74 +164,91 @@ class MyClient(discord.Client):
             # 添付ファイルの処理
             msg_content = msg.content
             contents = []
-            attachments = []
-            contents.append({"type": "text", "text": msg_content})
+            attachments_for_llm = []
+            user_uploaded_files_info = []
+            
+            if msg_content:
+                contents.append({"type": "text", "text": msg_content})
             if msg.attachments:
-                for attachment in msg.attachments:
+                for attachment_idx, attachment in enumerate(msg.attachments):
                     filename = attachment.filename
+                    # download file info
+                    base, ext = os.path.splitext(filename)
+                    downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
+                    download_path = os.path.join(download_dir, downloaded_filename)
+                    
                     async with aiohttp.ClientSession() as session:
                         async with session.get(attachment.url) as resp:
                             if resp.status != 200:
                                 continue
                             raw = await resp.read()
-                            # pdf file
+                            
+                            # download file
+                            try:
+                                with open(download_path, "wb") as f:
+                                    f.write(raw)
+                                user_uploaded_files_info.append(
+                                    {"origin": filename, "downloaded_path": downloaded_filename}
+                                )
+                                print(f"File downloaded: {filename} -> {downloaded_filename}")
+                            except Exception as e:
+                                print(f"Error downloading file {filename}: {e}")
+                                continue
+                            
+                            # pdf file to base64
                             if filename.endswith('.pdf') and not msg.author.bot:
                                 pdf_base64 = base64.b64encode(raw).decode('utf-8')
                                 if provider == "openai":
                                     imgs_base64 = Utils.pdf_url_to_base64_images(attachment.url)
                                     for img in imgs_base64:
-                                        attachments.append({
+                                        attachments_for_llm.append({
                                             "type": "image_url",
                                             "image_url": {"url": f"data:image/png;base64,{img}"},
                                         })
                                 elif provider == "anthropic" or "gemini":
-                                    attachments.append({
+                                    attachments_for_llm.append({
                                         "type": "file",
                                         "source_type": "base64",
                                         "mime_type": "application/pdf",
                                         "data": pdf_base64,
                                     })
-                            # image file
+                            # image file to base64
                             elif filename.endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
                                 if filename.startswith('latex_formula_'):
                                     continue
                                 img_base64 = base64.b64encode(raw).decode('utf-8')
                                 extension = filename.split('.')[-1]
-                                attachments.append({
+                                attachments_for_llm.append({
                                     "type": "image_url",
                                     "image_url": {"url": f"data:image/{extension};base64,{img_base64}"},
                                 })
-                            # text file
+                            # text file 
                             elif Utils.is_probably_text(raw):
-                                encoding = Utils.detect_encoding(raw)
-                                try:
-                                    file_text = raw.decode(encoding)
-                                    msg_content = (
-                                        f"{msg_content}"
-                                        f"\n__file_start__{filename=}\n"
-                                        f"{file_text}\n__file_end__"
-                                    )
-                                except UnicodeError as e:
-                                    msg_content = (
-                                        f"{msg_content}"
-                                        f"\n__file_start__{filename=}\n"
-                                        f"Error decoding file: {e}\n__file_end__"
-                                    )
+                                # text fileはAgentがツールで読む想定
+                                pass
                             # other file
                             else:
-                                msg_content = (
-                                    f"{msg_content}"
-                                    f"\n__file_start__{filename=}\n"
-                                    "Cannot open file. Only image files and files that can be opened in plane text are supported.\n"
-                                    "__file_end__"
-                                )
+                                pass
+            
+            # ユーザーがアップロードしたファイル情報をメッセージに追加
+            if user_uploaded_files_info:
+                file_info_text = "\n\navailable files:\n"
+                for info in user_uploaded_files_info:
+                    file_info_text += f"- path: {info['downloaded_path']} (original filename: {info['origin']})\n"
+                
+                # contentsの最初のtext要素にファイル情報を追記
+                if contents and contents[0]["type"] == "text":
+                    contents[0]["text"] += file_info_text
+                else: # text要素がない場合は先頭に追加
+                    contents.insert(0, {"type": "text", "text": file_info_text.strip()})
+
             # メッセージの変換
             if not msg.author.bot:
-                converted_messages.append(HumanMessage(contents + attachments))
+                converted_messages.append(HumanMessage(contents + attachments_for_llm))
             if msg.author.bot:
                 if provider == "gemini":
                     # geminiはmodelが画像を送信することも想定している
-                    converted_messages.append(AIMessage(contents + attachments))
+                    converted_messages.append(AIMessage(contents + attachments_for_llm))
                 else:
                     converted_messages.append(AIMessage(contents))
                     # ほかのproviderでもbotが画像を送信した場合の処理を追加予定
@@ -409,14 +321,28 @@ class MyClient(discord.Client):
             
             content_to_send = buff if buff.strip() else None
             await thread.send(content=content_to_send, files=files_to_send)
+        
+        # AGENT_ATTACHMENTS_DIR と USER_ATTACHMENTS_DIR の中身を削除
+        agent_attachments_dir = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
+        user_attachments_dir = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
 
-            # 送信後に添付ファイルを削除
-            if attachments:
-                for file_path in attachments:
-                    try:
-                        os.remove(file_path)
-                    except OSError as e:
-                        print(f"Error deleting attachment file {file_path}: {e}")
+        dirs_to_cleanup = []
+        if agent_attachments_dir and os.path.isdir(agent_attachments_dir):
+            dirs_to_cleanup.append(agent_attachments_dir)
+        if user_attachments_dir and os.path.isdir(user_attachments_dir) and user_attachments_dir not in dirs_to_cleanup:
+            dirs_to_cleanup.append(user_attachments_dir)
+        for dir_path in dirs_to_cleanup:
+            print(f"Cleaning up directory: {dir_path}")
+            for item_name in os.listdir(dir_path):
+                item_path = os.path.join(dir_path, item_name)
+                try:
+                    if os.path.isfile(item_path) or os.path.islink(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        import shutil
+                        shutil.rmtree(item_path)
+                except Exception as e:
+                    print(f'Failed to delete {item_path}. Reason: {e}')
 
 
     def split_response(
