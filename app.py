@@ -54,25 +54,43 @@ class MyClient(discord.Client):
 
         print(f"user: {message.content}")
         thread, messages = await self.get_thread_and_messages(message)
-        thread_name_future = self.generate_thread_name(messages)
-        converted_messages = await self.convert_message(
+
+        thread_name_coro = self.generate_thread_name(messages)
+        converted_messages_for_agent = await self.convert_message(
             messages,
             provider=Models.get_field(message.channel, "provider"),
             system_prompt=SytemPrompts.prompts['assistant']
         )
-        response_future = llm_agent.invoke(messages = converted_messages)
+        response_coro = llm_agent.invoke(messages=converted_messages_for_agent)
 
-        gathered_results = await asyncio.gather(
-            thread_name_future,
-            response_future
-        )
-        thread_name = gathered_results[0]
-        response, attachments = gathered_results[1]
+        task_generate_thread_name = asyncio.create_task(thread_name_coro)
+        task_get_response = asyncio.create_task(response_coro)
 
-        if thread and thread_name:
-            await thread.edit(name=thread_name)
-        await self.send_response(thread, response, attachments)
+        try:
+            thread_name = await task_generate_thread_name
+            if thread and thread_name:
+                try:
+                    await thread.edit(name=thread_name)
+                except discord.errors.NotFound:
+                    print(f"スレッド {thread.id} が見つかりませんでした。名前編集前に削除された可能性があります。")
+                except discord.errors.Forbidden:
+                    print(f"スレッド {thread.id} の名前を編集する権限がありません。")
+                except Exception as e:
+                    print(f"スレッド名編集中にエラーが発生しました ({thread.id}): {e}")
+        except Exception as e:
+            print(f"スレッド名生成中にエラーが発生しました: {e}")
 
+        async with thread.typing():
+            try:
+                response, attachments = await task_get_response
+                await self.send_response(thread, response, attachments)
+            except Exception as e:
+                print(f"エージェントのレスポンス処理または送信中にエラーが発生しました: {e}")
+                if thread:
+                    try:
+                        await self.send_response(thread, "エラーが発生しました。処理を完了できませんでした。", [])
+                    except Exception as send_e:
+                        print(f"エラーメッセージの送信中にさらにエラーが発生しました: {send_e}")
 
     async def get_thread_and_messages(
         self,
