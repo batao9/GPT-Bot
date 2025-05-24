@@ -281,8 +281,6 @@ class MyClient(discord.Client):
         # システムプロンプトの追加
         if system_prompt:
             converted_messages.insert(0, SystemMessage(content=system_prompt))
-            
-        print(f"converted_messages: {converted_messages}")
 
         return merge_message_runs(converted_messages)
 
