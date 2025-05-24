@@ -49,6 +49,7 @@ class MyClient(discord.Client):
             provider=Models.get_field(message.channel, "provider"),
             tools=Models.get_field(message.channel, "tools"),
             reasoning_effort=Models.get_field(message.channel, "reasoning_effort"),
+            debug=True
         )
 
         print(f"user: {message.content}")
@@ -156,24 +157,28 @@ class MyClient(discord.Client):
         for msg_idx, msg in enumerate(reversed(messages)):
             if msg.is_system():
                 continue
-
+            
+            current_msg_content_text = msg.content if msg.content is not None else ""
+            if msg.author.bot and not msg.attachments and not current_msg_content_text.strip():
+                print(f"Skipping empty bot message (no attachments, no content): {msg.id}")
+                continue
+            
             if msg.author.bot and not msg.attachments:
-                converted_messages.append(AIMessage(content=msg.content))
+                converted_messages.append(AIMessage(content=current_msg_content_text))
                 continue
 
-            # 添付ファイルの処理
-            msg_content = msg.content
             contents = []
+            if current_msg_content_text.strip():
+                contents.append({"type": "text", "text": current_msg_content_text})
+            
+            # 添付ファイルの処理
             attachments_for_llm = []
             user_uploaded_files_info = []
-            
-            if msg_content:
-                contents.append({"type": "text", "text": msg_content})
             if msg.attachments:
                 for attachment_idx, attachment in enumerate(msg.attachments):
                     filename = attachment.filename
                     # download file info
-                    base, ext = os.path.splitext(filename)
+                    _, ext = os.path.splitext(filename)
                     downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
                     download_path = os.path.join(download_dir, downloaded_filename)
                     
@@ -230,7 +235,7 @@ class MyClient(discord.Client):
                             else:
                                 pass
             
-            # ユーザーがアップロードしたファイル情報をメッセージに追加
+            # 添付ファイル情報をメッセージに追加
             if user_uploaded_files_info:
                 file_info_text = "\n\navailable files:\n"
                 for info in user_uploaded_files_info:
@@ -258,6 +263,8 @@ class MyClient(discord.Client):
         # システムプロンプトの追加
         if system_prompt:
             converted_messages.insert(0, SystemMessage(content=system_prompt))
+            
+        print(f"converted_messages: {converted_messages}")
 
         return merge_message_runs(converted_messages)
 
