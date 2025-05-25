@@ -24,6 +24,13 @@ from utils import Utils
 
 
 class MyClient(discord.Client):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.input_dir_path = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
+        self.output_dir_path = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
+        os.makedirs(self.input_dir_path, exist_ok=True)
+        os.makedirs(self.output_dir_path, exist_ok=True)
+
     async def on_ready(self) -> None:
         """クライアントが準備完了したときに呼び出される。
         """
@@ -49,7 +56,8 @@ class MyClient(discord.Client):
             provider=Models.get_field(message.channel, "provider"),
             tools=Models.get_field(message.channel, "tools"),
             reasoning_effort=Models.get_field(message.channel, "reasoning_effort"),
-            debug=True
+            input_dir_path=self.input_dir_path,
+            output_dir_path=self.output_dir_path
         )
 
         print(f"user: {message.content}")
@@ -169,8 +177,6 @@ class MyClient(discord.Client):
             List[BaseMessage]: 変換されたメッセージのリスト。
         """
         converted_messages = []
-        download_dir = os.getenv('USER_ATTACHMENTS_DIR') or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
-        os.makedirs(download_dir, exist_ok=True)
         
         for msg_idx, msg in enumerate(reversed(messages)):
             if msg.is_system():
@@ -198,7 +204,7 @@ class MyClient(discord.Client):
                     # download file info
                     _, ext = os.path.splitext(filename)
                     downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
-                    download_path = os.path.join(download_dir, downloaded_filename)
+                    download_path = os.path.join(self.input_dir_path, downloaded_filename)
                     
                     async with aiohttp.ClientSession() as session:
                         async with session.get(attachment.url) as resp:
@@ -345,15 +351,12 @@ class MyClient(discord.Client):
             content_to_send = buff if buff.strip() else None
             await thread.send(content=content_to_send, files=files_to_send)
         
-        # AGENT_ATTACHMENTS_DIR と USER_ATTACHMENTS_DIR の中身を削除
-        agent_attachments_dir = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
-        user_attachments_dir = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
-
+        # self.input_dir_path と self.output_dir_path の中身を削除
         dirs_to_cleanup = []
-        if agent_attachments_dir and os.path.isdir(agent_attachments_dir):
-            dirs_to_cleanup.append(agent_attachments_dir)
-        if user_attachments_dir and os.path.isdir(user_attachments_dir) and user_attachments_dir not in dirs_to_cleanup:
-            dirs_to_cleanup.append(user_attachments_dir)
+        if self.output_dir_path and os.path.isdir(self.output_dir_path):
+            dirs_to_cleanup.append(self.output_dir_path)
+        if self.input_dir_path and os.path.isdir(self.input_dir_path) and self.input_dir_path not in dirs_to_cleanup:
+            dirs_to_cleanup.append(self.input_dir_path)
         for dir_path in dirs_to_cleanup:
             print(f"Cleaning up directory: {dir_path}")
             for item_name in os.listdir(dir_path):

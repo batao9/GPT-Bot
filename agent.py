@@ -44,6 +44,8 @@ class Agent:
         system_prompt: Optional[str] = None,
         tools: Optional[List[str]] = None,
         reasoning_effort: Optional[str] = None,
+        input_dir_path: Optional[str] = os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach'),
+        output_dir_path: Optional[str] = os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach'),
         debug: bool = False
     ):
         """
@@ -55,9 +57,11 @@ class Agent:
             system_prompt (Optional[str]): システムプロンプト。
             tools (Optional[List[str]]): 使用するツールのリスト (例: ["ggl_search"])。
             reasoning_effort (Optional[str]): (OpenAIのみ) 推論の取り組み度合い。
+            input_dir_path (Optional[str]): 入力ディレクトリパス。
+            output_dir_path (Optional[str]): 出力ディレクトリパス。
             debug (bool): デバッグモード。
         """
-        instance = cls(model_name, provider, system_prompt, tools, reasoning_effort, debug, _create_mode=True)
+        instance = cls(model_name, provider, system_prompt, tools, reasoning_effort, input_dir_path, output_dir_path, debug, _create_mode=True)
         # mcpツールを非同期に初期化
         await instance._async_init_components(tools_arg_for_async=tools)
         return instance
@@ -69,6 +73,8 @@ class Agent:
         system_prompt: Optional[str] = None,
         tools: Optional[List[str]] = None,
         reasoning_effort: Optional[str] = None,
+        input_dir_path: Optional[str] = None,
+        output_dir_path: Optional[str] = None,
         debug: bool = False,
         _create_mode: bool = False
     ):
@@ -81,6 +87,8 @@ class Agent:
             system_prompt (Optional[str]): システムプロンプト。
             tools (Optional[List[str]]): 使用するツールのリスト (例: ["ggl_search"])。
             reasoning_effort (Optional[str]): (OpenAIのみ) 推論の取り組み度合い。
+            input_dir_path (Optional[str]): 入力ディレクトリパス。
+            output_dir_path (Optional[str]): 出力ディレクトリパス。
             debug (bool): デバッグモード。
             _create_mode (bool): インスタンス作成モード。
         """
@@ -94,10 +102,11 @@ class Agent:
         self.model_name = model_name
         self.provider = provider.lower()
         self.system_prompt = system_prompt or "あなたはAIアシスタントです。"
+        self.input_dir_path = input_dir_path
+        self.output_dir_path = output_dir_path
         self.tools = self._initialize_tools(tools)
         if self.provider == "openai":
             self.reasoning_effort = reasoning_effort
-
         self.llm: BaseChatModel = self._initialize_llm()
         self.agent_executor: Optional[CompiledGraph] = None
 
@@ -170,7 +179,7 @@ class Agent:
         Returns:
             List[Tool]: 初期化されたツールのリスト。
         """
-        download_dir = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
+        download_dir = self.input_dir_path
         tools_list = [
             get_docx_loader_tool(download_dir),
             get_text_file_loader_tool(download_dir)
@@ -216,7 +225,7 @@ class Agent:
             response = await self.agent_executor.ainvoke(
                 {"messages": input_messages}
             )
-            if self.debug: print(f"Response: {response['messages'][-1].text()}")
+            if self.debug: print(f"Response: {response["structured_response"].response}")
 
             agent_response_obj = response["structured_response"]
             response_text = agent_response_obj.response
@@ -225,7 +234,7 @@ class Agent:
             if not requested_attachments:
                 return response_text, []
 
-            attachments_base_dir = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
+            attachments_base_dir = self.output_dir_path
 
             # 添付ファイルが存在するか検証
             verified_attachments = []
