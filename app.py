@@ -51,23 +51,30 @@ class MyClient(discord.Client):
         ):
             return
 
+        print(f"user: {message.content}")
+        thread, messages = await self.get_thread_and_messages(message)
+        
+        session_id = message.id
+        session_input_dir = os.path.join(self.input_dir_path, str(session_id))
+        session_output_dir = os.path.join(self.output_dir_path, str(session_id))
+        os.makedirs(session_input_dir, exist_ok=True)
+        os.makedirs(session_output_dir, exist_ok=True)
+        
         llm_agent: Agent = await Agent.create(
             model_name=Models.get_field(message.channel, "model"),
             provider=Models.get_field(message.channel, "provider"),
             tools=Models.get_field(message.channel, "tools"),
             reasoning_effort=Models.get_field(message.channel, "reasoning_effort"),
-            input_dir_path=self.input_dir_path,
-            output_dir_path=self.output_dir_path
+            input_dir_path=session_input_dir,
+            output_dir_path=session_output_dir
         )
-
-        print(f"user: {message.content}")
-        thread, messages = await self.get_thread_and_messages(message)
 
         thread_name_coro = self.generate_thread_name(messages)
         converted_messages_for_agent = await self.convert_message(
             messages,
             provider=Models.get_field(message.channel, "provider"),
-            system_prompt=SytemPrompts.prompts['assistant']
+            system_prompt=SytemPrompts.prompts['assistant'],
+            save_dir_path = session_input_dir
         )
         response_coro = llm_agent.invoke(messages=converted_messages_for_agent)
 
@@ -91,12 +98,22 @@ class MyClient(discord.Client):
         async with thread.typing():
             try:
                 response, attachments = await task_get_response
-                await self.send_response(thread, response, attachments)
+                await self.send_response(
+                    thread=thread, 
+                    response=response, 
+                    attachments=attachments,
+                    input_dir_path = session_input_dir,
+                    output_dir_path = session_output_dir)
             except Exception as e:
                 print(f"エージェントのレスポンス処理または送信中にエラーが発生しました: {e}")
                 if thread:
                     try:
-                        await self.send_response(thread, "エラーが発生しました。処理を完了できませんでした。", [])
+                        await self.send_response(
+                            thread=thread, 
+                            response="エラーが発生しました。処理を完了できませんでした。", 
+                            attachments=[], 
+                            input_dir_path = session_input_dir,
+                            output_dir_path = session_output_dir)
                     except Exception as send_e:
                         print(f"エラーメッセージの送信中にさらにエラーが発生しました: {send_e}")
 
@@ -164,7 +181,8 @@ class MyClient(discord.Client):
         self,
         messages: List[discord.Message],
         provider: str = "openai",
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        save_dir_path: str = None,
     ) -> List[BaseMessage]:
         """discord.Messageオブジェクトのリストをモデルへの入力形式に変換する。
 
@@ -172,6 +190,7 @@ class MyClient(discord.Client):
             messages (List[discord.Message]): 変換するdiscord.Messageオブジェクトのリスト。
             provider (str, optional): 使用するモデルプロバイダー ('openai', 'anthropic', 'gemini'など)。Defaults to "openai".
             system_prompt (Optional[str], optional): 追加するシステムプロンプト。Defaults to None.
+            save_dir_path: ファイルを保存するディレクトリのパス。Defaults to None.
 
         Returns:
             List[BaseMessage]: 変換されたメッセージのリスト。
@@ -204,7 +223,8 @@ class MyClient(discord.Client):
                     # download file info
                     _, ext = os.path.splitext(filename)
                     downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
-                    download_path = os.path.join(self.input_dir_path, downloaded_filename)
+                    base = save_dir_path or self.input_dir_path
+                    download_path = os.path.join(base, downloaded_filename)
                     
                     async with aiohttp.ClientSession() as session:
                         async with session.get(attachment.url) as resp:
@@ -295,7 +315,9 @@ class MyClient(discord.Client):
         self,
         thread: discord.TextChannel,
         response: str,
-        attachments: List[str] = []
+        attachments: List[str] = [],
+        input_dir_path: str = None,
+        output_dir_path: str = None
     ) -> None:
         """レスポンスを指定されたスレッドに送信する。
 
@@ -305,6 +327,8 @@ class MyClient(discord.Client):
             thread (discord.TextChannel): レスポンスを送信するスレッドまたはテキストチャンネル。
             response (str): 送信するレスポンス文字列。
             attachments (List[str], optional): 添付ファイルのパスのリスト。Defaults to [].
+            input_dir_path: userの添付ファイルを保存するディレクトリのパス。Defaults to None.
+            output_dir_path: agentの添付ファイルを保存するディレクトリのパス。Defaults to None.
         """
         print(f'bot:{response}')
         CODE_BLOCK_DELIMITER = "```"
@@ -352,11 +376,9 @@ class MyClient(discord.Client):
             await thread.send(content=content_to_send, files=files_to_send)
         
         # self.input_dir_path と self.output_dir_path の中身を削除
-        dirs_to_cleanup = []
-        if self.output_dir_path and os.path.isdir(self.output_dir_path):
-            dirs_to_cleanup.append(self.output_dir_path)
-        if self.input_dir_path and os.path.isdir(self.input_dir_path) and self.input_dir_path not in dirs_to_cleanup:
-            dirs_to_cleanup.append(self.input_dir_path)
+        out_dir = output_dir_path or self.output_dir_path
+        in_dir = input_dir_path or self.input_dir_path
+        dirs_to_cleanup = [d for d in (out_dir, in_dir) if d and os.path.isdir(d)]
         for dir_path in dirs_to_cleanup:
             print(f"Cleaning up directory: {dir_path}")
             for item_name in os.listdir(dir_path):
@@ -369,6 +391,11 @@ class MyClient(discord.Client):
                         shutil.rmtree(item_path)
                 except Exception as e:
                     print(f'Failed to delete {item_path}. Reason: {e}')
+            
+            try:
+                os.rmdir(dir_path)
+            except Exception as e:
+                print(f'Failed to remove directory {dir_path}. Reason: {e}')
 
 
     def split_response(

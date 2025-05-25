@@ -124,7 +124,11 @@ class Agent:
             config_file = os.getenv("MCP_CONFIG_FILE") or "mcp.json"
             try:
                 with open(config_file, 'r') as f:
-                    config = json.load(f)
+                    raw = f.read()
+                raw = raw.replace("${WORKDIR_IN}", self.input_dir_path)
+                raw = raw.replace("${WORKDIR_OUT}", self.output_dir_path)
+                config = json.loads(raw)
+                
                 if 'mcpServers' in config:
                     mcp_client = MultiServerMCPClient(config['mcpServers'])
                     mcp_tools_list = await mcp_client.get_tools()
