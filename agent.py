@@ -125,8 +125,8 @@ class Agent:
             try:
                 with open(config_file, 'r') as f:
                     raw = f.read()
-                raw = raw.replace("${WORKDIR_IN}", self.input_dir_path)
-                raw = raw.replace("${WORKDIR_OUT}", self.output_dir_path)
+                raw = raw.replace("${USER_ATTACHMENTS_DIR}", self.input_dir_path)
+                raw = raw.replace("${AGENT_ATTACHMENTS_DIR}", self.output_dir_path)
                 config = json.loads(raw)
                 
                 if 'mcpServers' in config:
