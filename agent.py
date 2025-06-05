@@ -168,8 +168,7 @@ class Agent:
 
         return create_react_agent(
             model=self.llm,
-            tools=self.tools,
-            response_format=AgentResponse
+            tools=self.tools
         )
     
     
@@ -226,36 +225,42 @@ class Agent:
         if self.debug: print(f"Input messages: {input_messages}")
 
         try:
-            response = await self.agent_executor.ainvoke(
-                {"messages": input_messages}
-            )
-            if self.debug: print(f"Response: {response["structured_response"].response}")
+            result = await self.agent_executor.ainvoke({"messages": input_messages})
+            if self.debug:
+                print(f"Raw agent response: {result}")
 
-            agent_response_obj = response["structured_response"]
-            response_text = agent_response_obj.response
-            requested_attachments = agent_response_obj.attachments
+            # Extract response text: handle structured_response, messages list, or raw string
+            if isinstance(result, dict):
+                if "structured_response" in result and hasattr(result["structured_response"], "response"):
+                    response_text = result["structured_response"].response
+                elif "messages" in result:
+                    msgs = result["messages"]
+                    if isinstance(msgs, list) and msgs:
+                        response_text = msgs[-1].content
+                    else:
+                        response_text = ""
+                else:
+                    response_text = str(result)
+            elif isinstance(result, str):
+                response_text = result
+            else:
+                response_text = str(result)
 
-            if not requested_attachments:
-                return response_text, []
+            attachments = []
+            attachments_dir = self.output_dir_path
+            if attachments_dir and os.path.isdir(attachments_dir):
+                for root, _, files in os.walk(attachments_dir):
+                    for fname in files:
+                        file_path = os.path.join(root, fname)
+                        if os.path.isfile(file_path):
+                            attachments.append(file_path)
+            if self.debug:
+                print(f"Collected attachments: {attachments}")
+            return response_text, attachments
 
-            attachments_base_dir = self.output_dir_path
-
-            # 添付ファイルが存在するか検証
-            verified_attachments = []
-            for filename in requested_attachments:
-                if not isinstance(filename, str) or not filename.strip():
-                    if self.debug:
-                        print(f"W: 添付ファイルリストに無効なファイル名が含まれています: {filename}")
-                    continue
-                file_path = os.path.join(attachments_base_dir, filename)
-                if os.path.exists(file_path) and os.path.isfile(file_path):
-                    verified_attachments.append(file_path)
-                elif self.debug:
-                    print(f"W: 添付ファイル '{filename}' が指定されたパス '{file_path}' に見つからないか、通常のファイルではありません。")
-            return response_text, verified_attachments
-        
         except Exception as e:
-            if self.debug: print(f"エージェント実行中にエラーが発生しました: {e}")
+            if self.debug:
+                print(f"エージェント実行中にエラーが発生しました: {e}")
             return f"処理中にエラーが発生しました。 ({type(e).__name__})", []
 
 
