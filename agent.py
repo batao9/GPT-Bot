@@ -234,11 +234,7 @@ class Agent:
                 if "structured_response" in result and hasattr(result["structured_response"], "response"):
                     response_text = result["structured_response"].response
                 elif "messages" in result:
-                    msgs = result["messages"]
-                    if isinstance(msgs, list) and msgs:
-                        response_text = msgs[-1].content
-                    else:
-                        response_text = ""
+                    response_text = str(result["messages"][-1].content)
                 else:
                     response_text = str(result)
             elif isinstance(result, str):
