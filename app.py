@@ -221,10 +221,12 @@ class MyClient(discord.Client):
                 for attachment_idx, attachment in enumerate(msg.attachments):
                     filename = attachment.filename
                     # download file info
-                    _, ext = os.path.splitext(filename)
-                    downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
-                    base = save_dir_path or self.input_dir_path
-                    download_path = os.path.join(base, downloaded_filename)
+                    if save_dir_path:
+                        _, ext = os.path.splitext(filename)
+                        downloaded_filename = f"attach{msg_idx:02d}_{attachment_idx:02d}{ext}"
+                        download_path = os.path.join(save_dir_path, downloaded_filename)
+                    else:
+                        download_path = None
                     
                     async with aiohttp.ClientSession() as session:
                         async with session.get(attachment.url) as resp:
@@ -234,12 +236,13 @@ class MyClient(discord.Client):
                             
                             # download file
                             try:
-                                with open(download_path, "wb") as f:
-                                    f.write(raw)
-                                user_uploaded_files_info.append(
-                                    {"origin": filename, "downloaded_path": downloaded_filename}
-                                )
-                                print(f"File downloaded: {filename} -> {downloaded_filename}")
+                                if download_path:
+                                    with open(download_path, "wb") as f:
+                                        f.write(raw)
+                                    user_uploaded_files_info.append(
+                                        {"origin": filename, "downloaded_path": downloaded_filename}
+                                    )
+                                    print(f"File downloaded: {filename} -> {downloaded_filename}")
                             except Exception as e:
                                 print(f"Error downloading file {filename}: {e}")
                                 continue
