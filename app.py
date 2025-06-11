@@ -26,6 +26,7 @@ from utils import Utils
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.debug = os.getenv("DEBUG") or False
         self.input_dir_path = os.getenv("USER_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'user_attach')
         self.output_dir_path = os.getenv("AGENT_ATTACHMENTS_DIR") or os.path.join(os.path.dirname(__file__), 'tmp', 'agent_attach')
         os.makedirs(self.input_dir_path, exist_ok=True)
@@ -66,7 +67,8 @@ class MyClient(discord.Client):
             tools=Models.get_field(message.channel, "tools"),
             reasoning_effort=Models.get_field(message.channel, "reasoning_effort"),
             input_dir_path=session_input_dir,
-            output_dir_path=session_output_dir
+            output_dir_path=session_output_dir,
+            debug=self.debug
         )
 
         thread_name_coro = self.generate_thread_name(messages)
