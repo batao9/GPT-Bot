@@ -1,4 +1,7 @@
-jax[cuda11_pip]
+tensorflow==2.15.0
+tensorflow-probability==0.23.0
+jax[cuda11_pip]==0.4.27
+jaxlib==0.4.27
 einops
 mediapy
 tensorflow-gan

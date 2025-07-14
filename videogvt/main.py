@@ -14,6 +14,11 @@
 
 """Main file for Video GVT."""
 
+# --- workaround for scenic / JAX >= 0.4.27 ---
+import types, sys
+sys.modules["jax.experimental.roofline"] = types.ModuleType("jax.experimental.roofline")
+# ----------------------------------------------
+
 from typing import Any
 
 import os

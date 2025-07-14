@@ -1,0 +1,21 @@
+[project]
+name = "magvit"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "dmvr",
+    "einops>=0.8.1",
+    "jax[cuda11-pip]==0.4.27",
+    "jaxlib==0.4.27",
+    "mediapy>=1.2.4",
+    "scenic",
+    "tensorflow==2.15.0",
+    "tensorflow-gan>=2.1.0",
+    "tensorflow-probability==0.23.0",
+]
+
+[tool.uv.sources]
+scenic = { git = "https://github.com/google-research/scenic.git" }
+dmvr = { git = "https://github.com/deepmind/dmvr.git" }
