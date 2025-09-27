@@ -134,7 +134,13 @@ class MyClient(discord.Client):
         if isinstance(message.channel, discord.Thread):
             thread = message.channel
             messages = [msg async for msg in thread.history(limit=100)]
-            messages.append(await thread.parent.fetch_message(thread.id))
+            starter_id = getattr(thread, 'starter_message_id', None)
+            if starter_id and getattr(thread, 'parent', None):
+                try:
+                    base = await thread.parent.fetch_message(starter_id)
+                    messages.append(base)
+                except Exception as e:
+                    print(f'スレッド開始メッセージの取得に失敗しました ({thread.id}): {e}')
         elif (
             isinstance(message.channel, discord.TextChannel) and
             Models.is_channel_configured(message.channel)
@@ -208,10 +214,6 @@ class MyClient(discord.Client):
                 print(f"Skipping empty bot message (no attachments, no content): {msg.id}")
                 continue
             
-            if msg.author.bot and not msg.attachments:
-                converted_messages.append(AIMessage(content=current_msg_content_text))
-                continue
-
             contents = []
             if current_msg_content_text.strip():
                 contents.append({"type": "text", "text": current_msg_content_text})
@@ -222,6 +224,8 @@ class MyClient(discord.Client):
             if msg.attachments:
                 for attachment_idx, attachment in enumerate(msg.attachments):
                     filename = attachment.filename
+                    if msg.author.bot and filename.startswith('latex_formula_'):
+                        continue
                     # download file info
                     if save_dir_path:
                         _, ext = os.path.splitext(filename)
@@ -267,9 +271,7 @@ class MyClient(discord.Client):
                                         "data": pdf_base64,
                                     })
                             # image file to base64
-                            elif filename.endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
-                                if filename.startswith('latex_formula_'):
-                                    continue
+                            elif filename.lower().endswith(('.png', '.jpg', '.gif', 'webp', 'jpeg')):
                                 img_base64 = base64.b64encode(raw).decode('utf-8')
                                 extension = filename.split('.')[-1]
                                 attachments_for_llm.append({
@@ -320,7 +322,7 @@ class MyClient(discord.Client):
         self,
         thread: discord.TextChannel,
         response: str,
-        attachments: List[str] = [],
+        attachments: List[str] | None = None,
         input_dir_path: str = None,
         output_dir_path: str = None
     ) -> None:
@@ -371,6 +373,7 @@ class MyClient(discord.Client):
                 buff += part
 
         # 残りのバッファ内容と、引数で渡された添付ファイルを送信
+        attachments = attachments or []
         if buff.strip() or attachments:
             files_to_send = []
             if attachments:
