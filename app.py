@@ -263,6 +263,11 @@ class MyClient(discord.Client):
                                             "type": "image_url",
                                             "image_url": {"url": f"data:image/png;base64,{img}"},
                                         })
+                                elif provider == "openai-responses":
+                                    attachments_for_llm.append({
+                                        "type": "input_file",
+                                        "file_url": attachment.url,
+                                    })
                                 elif provider in ("anthropic", "gemini"):
                                     attachments_for_llm.append({
                                         "type": "file",

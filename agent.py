@@ -105,7 +105,7 @@ class Agent:
         self.input_dir_path = input_dir_path
         self.output_dir_path = output_dir_path
         self.tools = self._initialize_tools(tools)
-        if self.provider == "openai":
+        if self.provider == "openai" or self.provider == "openai-responses":
             self.reasoning_effort = reasoning_effort
         self.llm: BaseChatModel = self._initialize_llm()
         self.agent_executor: Optional[CompiledGraph] = None
@@ -156,6 +156,12 @@ class Agent:
             return ChatAnthropic(model=self.model_name)
         elif self.provider == "google" or self.provider == "gemini":
             return ChatGoogleGenerativeAI(model=self.model_name)
+        elif self.provider == "openai-responses":
+            return ChatOpenAI(
+                model=self.model_name,
+                reasoning_effort=self.reasoning_effort,
+                use_responses_api=True,
+                store=False)
         else:
             raise ValueError(f"E: 不明なプロバイダーです: {self.provider}")
 
@@ -234,7 +240,10 @@ class Agent:
                 if "structured_response" in result and hasattr(result["structured_response"], "response"):
                     response_text = result["structured_response"].response
                 elif "messages" in result:
-                    response_text = str(result["messages"][-1].content)
+                    if self.provider == "openai-responses":
+                        response_text = result["messages"][-1].content[0]["text"]
+                    else:
+                        response_text = str(result["messages"][-1].content)
                 else:
                     response_text = str(result)
             elif isinstance(result, str):
