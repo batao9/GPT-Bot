@@ -160,8 +160,7 @@ class Agent:
             return ChatOpenAI(
                 model=self.model_name,
                 reasoning_effort=self.reasoning_effort,
-                use_responses_api=True,
-                store=False)
+                use_responses_api=True)
         else:
             raise ValueError(f"E: 不明なプロバイダーです: {self.provider}")
 
