@@ -13,8 +13,6 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     ANTHROPIC_API_KEY=xxxxxxxxxxxxxxxxxxxxxxx
     # google search CSE ID
     GOOGLE_CSE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxx # google search tool を使う場合
-    # Riza API key (Code Interpreter)
-    RIZA_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx # code interpreter を使う場合
 
     # agent attachment files
     USER_ATTACHMENTS_DIR='/path/to/user_attach'     # userが送信したファイルのパス
