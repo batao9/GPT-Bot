@@ -24,6 +24,7 @@ import dotenv
 import json
 import os
 from typing import Optional, List, Dict, Any, Tuple
+from error_logger import log_agent_error
 from pydantic import BaseModel, Field
 
 class AgentResponse(BaseModel):
@@ -265,6 +266,10 @@ class Agent:
         except Exception as e:
             if self.debug:
                 print(f"エージェント実行中にエラーが発生しました: {e}")
+            try:
+                log_agent_error(input_messages, self.input_dir_path, e)
+            except Exception:
+                pass
             return f"処理中にエラーが発生しました。 ({type(e).__name__})", []
 
 

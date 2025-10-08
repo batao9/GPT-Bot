@@ -21,6 +21,7 @@ from typing import Optional, List, Dict, Tuple
 from LLM_Models import Models
 from prompts import SytemPrompts
 from utils import Utils
+from error_logger import log_app_error
 
 
 class MyClient(discord.Client):
@@ -96,6 +97,10 @@ class MyClient(discord.Client):
                     print(f"スレッド名編集中にエラーが発生しました ({thread.id}): {e}")
         except Exception as e:
             print(f"スレッド名生成中にエラーが発生しました: {e}")
+            try:
+                log_app_error(messages, None, session_input_dir, e)
+            except Exception:
+                pass
 
         async with thread.typing():
             try:
@@ -108,6 +113,10 @@ class MyClient(discord.Client):
                     output_dir_path = session_output_dir)
             except Exception as e:
                 print(f"エージェントのレスポンス処理または送信中にエラーが発生しました: {e}")
+                try:
+                    log_app_error(messages, converted_messages_for_agent, session_input_dir, e)
+                except Exception:
+                    pass
                 if thread:
                     try:
                         await self.send_response(
