@@ -37,7 +37,6 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     "tools": [
         "ggl_search / google search",
         "ddg_search / duckduckgo search",
-        "code_interpreter / code interpreter",
         "web_loader / web loader from url",
         "mcp / mcp server"
     ],

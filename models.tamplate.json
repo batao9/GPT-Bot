@@ -4,8 +4,8 @@
         "provider": "openai",
         "tools": [
             "ggl_search",
-            "code_interpreter",
-            "web_loader"
+            "web_loader",
+            "mcp"
         ]
     },
     "gemini": {
@@ -13,8 +13,8 @@
         "provider": "gemini",
         "tools": [
             "ggl_search",
-            "code_interpreter",
-            "web_loader"
+            "web_loader",
+            "mcp"
         ]
     },
     "discord channel name": { 
@@ -23,8 +23,8 @@
         "tools": [
             "ggl_search / google search",
             "ddg_search / duckduckgo search",
-            "code_interpreter / code interpreter",
-            "web_loader / web loader from url"
+            "web_loader / web loader from url",
+            "mcp / mcp server"
         ],
         "reasoning_effort": "low, medium or high / default is medium. OpenAI's o-series models only."
     }
