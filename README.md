@@ -43,6 +43,7 @@ GPT bot は ChatGPT を Discord 上で利用するための Discord Bot です�
     "reasoning_effort": "low, medium or high / default is medium. OpenAI's o-series models only."
 }
 ```
+エージェントは上記設定に関係なく、長いコードやテキストを添付ファイルとして送信するための`Text_Attachment_Writer`ツールを常に利用できます。`content`（必須）、`filename`、`encoding`の各引数を個別に指定する形式で呼び出すと、`AGENT_ATTACHMENTS_DIR`配下にファイルが作成され、応答時に添付されます。`filename`を省略すると自動で`.txt`ファイル名が生成されます。
 ### MCP Serverの利用
 `mcp.json` を設定することでMCP Serverへの接続が可能
 ```json

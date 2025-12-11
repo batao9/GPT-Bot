@@ -13,7 +13,8 @@ from tools import (
     get_code_interpreter_tool,
     get_web_loader_tool,
     get_docx_loader_tool,
-    get_text_file_loader_tool
+    get_text_file_loader_tool,
+    get_text_attachment_writer_tool
 )
 # Agent
 from langchain_core.tools import Tool
@@ -189,10 +190,13 @@ class Agent:
             List[Tool]: 初期化されたツールのリスト。
         """
         download_dir = self.input_dir_path
+        upload_dir = self.output_dir_path
         tools_list = [
             get_docx_loader_tool(download_dir),
             get_text_file_loader_tool(download_dir)
         ]
+        if upload_dir:
+            tools_list.append(get_text_attachment_writer_tool(upload_dir))
         if 'ggl_search' in tools:
             tools_list.append(get_google_search_tool())
         if 'ddg_search' in tools:

@@ -1,13 +1,15 @@
-from langchain_core.tools import Tool
+from langchain_core.tools import Tool, StructuredTool
 from langchain_community.tools.ddg_search.tool import DuckDuckGoSearchRun
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_google_community import GoogleSearchAPIWrapper
 from langchain_community.tools.riza.command import ExecPython
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.document_loaders import Docx2txtLoader
-from typing import List, Any
+from typing import List, Any, Optional
+import uuid
 from utils import Utils
 import os
+from pydantic import BaseModel, Field
 
 def get_google_search_tool() -> Tool:
     """Google検索ツールを返します。"""
@@ -80,4 +82,54 @@ def get_text_file_loader_tool(download_dir: str = None) -> Tool:
                     'Use this tool to read non-binary files such as source code or plain text. ' +
                     'Input must be available filename of a file.',
         func=text_file_loader_func
+    )
+
+
+def get_text_attachment_writer_tool(upload_dir: str = None) -> Tool:
+    """テキスト添付ファイル作成ツールを返します。"""
+
+    class TextAttachmentWriterArgs(BaseModel):
+        content: str = Field(description="Text to write into the attachment file.")
+        filename: Optional[str] = Field(default=None, description="Optional filename for the attachment.")
+        encoding: str = Field(default="utf-8", description="Encoding used when writing the file.")
+
+    def text_attachment_writer_func(
+        content: str,
+        filename: Optional[str] = None,
+        encoding: str = "utf-8"
+    ) -> str:
+        if not upload_dir:
+            raise ValueError("Attachment directory is not configured.")
+
+        if content is None:
+            raise ValueError("'content' is required to create an attachment.")
+
+        os.makedirs(upload_dir, exist_ok=True)
+
+        if filename:
+            filename = os.path.basename(filename)
+        else:
+            filename = f"attachment_{uuid.uuid4().hex}.txt"
+
+        if not filename:
+            raise ValueError("A valid filename could not be determined.")
+
+        if any(sep in filename for sep in ('/', '\\')):
+            raise ValueError("Filename must not contain path separators.")
+
+        file_path = os.path.join(upload_dir, filename)
+
+        try:
+            with open(file_path, 'w', encoding=encoding) as f:
+                f.write(content)
+        except LookupError as e:
+            raise ValueError(f"Unsupported encoding specified: {encoding}") from e
+
+        return f"Attachment saved as {filename}. The file will be delivered with the final response."
+
+    return StructuredTool.from_function(
+        func=text_attachment_writer_func,
+        name="Text_Attachment_Writer",
+        description='Text Attachment Writer: Create a text-based attachment. Provide content, optional filename, and encoding.',
+        args_schema=TextAttachmentWriterArgs
     )
