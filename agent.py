@@ -235,7 +235,7 @@ class Agent:
         if self.debug: print(f"Input messages: {input_messages}")
 
         try:
-            result = await self.agent_executor.ainvoke({"messages": input_messages})
+            result = await self.agent_executor.ainvoke({"messages": input_messages}, {"recursion_limit": 50})
             if self.debug:
                 print(f"Raw agent response: {result}")
 
